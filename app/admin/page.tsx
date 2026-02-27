@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Reserva = {
@@ -46,8 +47,32 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
-    void fetchReservas();
-  }, []);
+    const checkAuthAndFetch = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      const { data: usuario } = await supabase
+        .from("usuarios")
+        .select("es_operador")
+        .eq("email", session.user.email)
+        .maybeSingle();
+
+      if (!usuario?.es_operador) {
+        router.replace("/login");
+        return;
+      }
+
+      await fetchReservas();
+    };
+
+    void checkAuthAndFetch();
+  }, [router]);
 
   const handleAccion = async (
     id: number,
