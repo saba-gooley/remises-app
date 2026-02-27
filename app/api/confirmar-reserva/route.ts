@@ -3,14 +3,11 @@ import { Resend } from "resend";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 const resendApiKey = process.env.RESEND_API_KEY;
-const resendFromEmail = process.env.RESEND_FROM_EMAIL;
+const resendFromEmail =
+  (process.env.RESEND_FROM_EMAIL ?? "noreply@remises.com") as string;
 
 if (!resendApiKey) {
   throw new Error("RESEND_API_KEY is not set in environment variables.");
-}
-
-if (!resendFromEmail) {
-  throw new Error("RESEND_FROM_EMAIL is not set in environment variables.");
 }
 
 const resend = new Resend(resendApiKey);
