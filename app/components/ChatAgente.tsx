@@ -361,7 +361,14 @@ export default function ChatAgente() {
   }
 
   const submitReserva = useCallback(async () => {
-    if (!session?.user) return;
+    if (!session?.user) {
+      console.log("[ChatAgente] submitReserva: no hay sesión", { session });
+      return;
+    }
+    console.log("[ChatAgente] Sesión para reserva:", {
+      usuario_id: session.user.id,
+      mail_solicitante: session.user.email,
+    });
     setSubmitting(true);
     const a = answers;
     const baseReserva = {
@@ -398,11 +405,13 @@ export default function ChatAgente() {
       a.idaYVuelta === "SI" && a.conEspera === "NO"
         ? [baseReserva, baseReserva]
         : [baseReserva];
+    console.log("[ChatAgente] Objeto a insertar en Supabase (reservas):", reservasAInsertar);
     const { data: reservasInsertadas, error: reservasError } = await supabase
       .from("reservas")
       .insert(reservasAInsertar)
       .select("id");
     if (reservasError) {
+      console.error("[ChatAgente] Error al insertar reservas:", reservasError);
       addAgent("Hubo un problema al crear la reserva. ¿Querés intentarlo de nuevo?");
       setSubmitting(false);
       return;
@@ -418,10 +427,12 @@ export default function ChatAgente() {
           pasajero_telefono: p.pasajeroTelefono ?? null,
         })),
       );
+      console.log("[ChatAgente] Objeto a insertar en Supabase (paradas):", paradasPayload);
       const { error: paradasError } = await supabase
         .from("paradas")
         .insert(paradasPayload);
       if (paradasError) {
+        console.error("[ChatAgente] Error al insertar paradas:", paradasError);
         addAgent("Hubo un problema al crear la reserva. ¿Querés intentarlo de nuevo?");
         setSubmitting(false);
         return;
