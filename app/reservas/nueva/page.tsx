@@ -145,9 +145,7 @@ export default function NuevaReservaPage() {
             calle: parada.calle,
             altura: parada.altura,
             localidad: parada.localidad,
-            observaciones: parada.observaciones || null,
             pasajero_nombre: parada.pasajeroNombre || null,
-            pasajero_cantidad: parada.pasajeroCantidad || null,
             pasajero_telefono: parada.pasajeroTelefono || null,
           })),
         );
