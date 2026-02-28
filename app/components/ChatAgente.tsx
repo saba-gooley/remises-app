@@ -189,7 +189,6 @@ export default function ChatAgente() {
       }
       if (nextStep === "parada_calle") {
         setParadaIndex((i) => i + 1);
-        setParadaSubStep("calle");
       }
       if (nextStep) setStep(nextStep);
       return nextStep;
