@@ -86,6 +86,10 @@ export default function NuevaReservaPage() {
     setSuccessMessage(null);
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       const baseReserva = {
         id_viaje: data.idViaje,
         tipo_viaje: data.tipoViaje,
@@ -111,6 +115,7 @@ export default function NuevaReservaPage() {
         fecha_fin_recurrente: data.fechaFinRecurrente ?? null,
         centro_costos: data.centroCostos,
         solicitado_por: data.solicitadoPor,
+        mail_solicitante: session?.user?.email ?? null,
         notas: data.notas || null,
         estado: "a_confirmar",
       };
