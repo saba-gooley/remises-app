@@ -49,6 +49,38 @@ type Answers = {
 const SALUDO =
   "¿En qué puedo ayudarte?\n1) Nueva reserva\n2) Consultar mis reservas";
 
+const PREGUNTA_MODO =
+  "¿Querés dictarme los datos del viaje en un mensaje o preferís que te guíe pregunta por pregunta?\n1) Dictar\n2) Guiarme";
+
+/** Orden de pasos obligatorios para detectar el primero faltante tras interpretar texto libre. */
+const ORDERED_REQUIRED_STEPS: string[] = [
+  "tipo_viaje",
+  "fecha_viaje",
+  "hora_viaje",
+  "origen_calle",
+  "origen_altura",
+  "origen_localidad",
+  "destino_calle",
+  "destino_altura",
+  "destino_localidad",
+  "pasajero_nombre",
+  "pasajero_telefono",
+];
+
+const STEP_TO_ANSWER_KEY: Record<string, keyof Answers> = {
+  tipo_viaje: "tipoViaje",
+  fecha_viaje: "fechaViaje",
+  hora_viaje: "horaViaje",
+  origen_calle: "origenCalle",
+  origen_altura: "origenAltura",
+  origen_localidad: "origenLocalidad",
+  destino_calle: "destinoCalle",
+  destino_altura: "destinoAltura",
+  destino_localidad: "destinoLocalidad",
+  pasajero_nombre: "pasajeroNombre",
+  pasajero_telefono: "pasajeroTelefono",
+};
+
 /** Parsea y normaliza hora a HH:MM. Acepta "14:25", "2:25 pm", "14:25 hs". Retorna null si no es válido. */
 function parseAndValidateHora(input: string): string | null {
   const s = input.trim().replace(/\s*hs\.?\s*$/i, "").trim();
@@ -178,9 +210,31 @@ export default function ChatAgente() {
       }
     }
     setLoading(false);
+    setStep("modo_reserva");
+    addAgent(PREGUNTA_MODO);
+  }, [addAgent]);
+
+  const startGuidedFlow = useCallback(() => {
     setStep("tipo_viaje");
     addAgent("Tipo de viaje: 1) Pasajero  2) Mensajería");
   }, [addAgent]);
+
+  /** Devuelve el primer paso obligatorio que falta en `answers`. */
+  const getFirstMissingStep = useCallback((currentAnswers: Answers): string | null => {
+    for (const step of ORDERED_REQUIRED_STEPS) {
+      const key = STEP_TO_ANSWER_KEY[step];
+      if (!key) continue;
+      const val = currentAnswers[key];
+      if (
+        val === undefined ||
+        val === null ||
+        (typeof val === "string" && !val.trim())
+      ) {
+        return step;
+      }
+    }
+    return null;
+  }, []);
 
   const advanceStep = useCallback(
     (currentStep: string, value: string, newAnswers: Answers) => {
@@ -272,6 +326,8 @@ export default function ChatAgente() {
   const getNextQuestion = useCallback(
     (nextStep: string): string => {
       switch (nextStep) {
+        case "tipo_viaje":
+          return "Tipo de viaje: 1) Pasajero  2) Mensajería";
         case "fecha_viaje":
           return "Fecha del viaje (DD/MM/YYYY):";
         case "hora_viaje":
@@ -466,6 +522,72 @@ export default function ChatAgente() {
       return;
     }
 
+    if (step === "modo_reserva") {
+      setInputValue("");
+      if (
+        raw === "2" ||
+        raw.toLowerCase().includes("guiar") ||
+        raw.toLowerCase().includes("pregunta")
+      ) {
+        startGuidedFlow();
+        return;
+      }
+      if (raw === "1" || raw.toLowerCase().includes("dictar")) {
+        setStep("dictar_texto");
+        addAgent(
+          "Contame los datos del viaje en un mensaje (origen, destino, fecha, hora, pasajero, teléfono, etc.).",
+        );
+        return;
+      }
+      return;
+    }
+
+    if (step === "dictar_texto") {
+      setInputValue("");
+      setLoading(true);
+      fetch("/api/interpretar-reserva", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto: raw }),
+      })
+        .then((res) => res.json())
+        .then((data: { datos?: Partial<Answers>; mensajeFaltantes?: string }) => {
+          const datos = data.datos ?? {};
+          setAnswers((prev) => ({ ...prev, ...datos }));
+          const merged = { ...answers, ...datos };
+          const lineas: string[] = [];
+          if (merged.tipoViaje) lineas.push(`Tipo: ${merged.tipoViaje === "mensajeria" ? "Mensajería" : "Pasajero"}`);
+          if (merged.fechaViaje) lineas.push(`Fecha: ${merged.fechaViaje}`);
+          if (merged.horaViaje) lineas.push(`Hora: ${merged.horaViaje}`);
+          if (merged.origenCalle || merged.origenLocalidad)
+            lineas.push(`Origen: ${[merged.origenCalle, merged.origenAltura].filter(Boolean).join(" ")} ${merged.origenLocalidad ?? ""}`.trim());
+          if (merged.destinoCalle || merged.destinoLocalidad)
+            lineas.push(`Destino: ${[merged.destinoCalle, merged.destinoAltura].filter(Boolean).join(" ")} ${merged.destinoLocalidad ?? ""}`.trim());
+          if (merged.pasajeroNombre) lineas.push(`Pasajero: ${merged.pasajeroNombre}`);
+          if (merged.pasajeroTelefono) lineas.push(`Tel: ${merged.pasajeroTelefono}`);
+          if (lineas.length > 0) {
+            addAgent("Esto es lo que entendí:\n" + lineas.join("\n"));
+          }
+          addAgent(data.mensajeFaltantes ?? "Para completar la reserva faltan algunos datos.");
+          const firstMissing = getFirstMissingStep(merged);
+          if (firstMissing) {
+            setStep(firstMissing);
+            const q = getNextQuestion(firstMissing);
+            if (q) addAgent(q);
+          } else {
+            setStep("paradas_sn");
+            addAgent("¿Tiene paradas intermedias? (Sí/No)");
+          }
+        })
+        .catch(() => {
+          addAgent("No pude interpretar el mensaje. ¿Querés que te guíe pregunta por pregunta? (Escribí Guiarme)");
+          setStep("modo_reserva");
+          addAgent(PREGUNTA_MODO);
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
+
     setInputValue("");
     const newAnswers = { ...answers };
 
@@ -608,12 +730,15 @@ export default function ChatAgente() {
     addAgent,
     advanceStep,
     getNextQuestion,
+    getFirstMissingStep,
     loadConfigAndStart,
+    startGuidedFlow,
     submitReserva,
     router,
   ]);
 
   const showChoiceButtons = step === "greeting";
+  const showModoButtons = step === "modo_reserva";
   const showConfirmButtons = step === "confirmar";
 
   return (
@@ -711,6 +836,33 @@ export default function ChatAgente() {
                   </button>
                 </div>
               )}
+              {showModoButtons && (
+                <div className="mb-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addUser("Dictar");
+                      setStep("dictar_texto");
+                      addAgent(
+                        "Contame los datos del viaje en un mensaje (origen, destino, fecha, hora, pasajero, teléfono, etc.).",
+                      );
+                    }}
+                    className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+                  >
+                    1) Dictar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addUser("Guiarme");
+                      startGuidedFlow();
+                    }}
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    2) Guiarme
+                  </button>
+                </div>
+              )}
               {showConfirmButtons && (
                 <div className="mb-2 flex gap-2">
                   <button
@@ -739,7 +891,7 @@ export default function ChatAgente() {
                   </button>
                 </div>
               )}
-              {!showChoiceButtons && !showConfirmButtons && (
+              {!showChoiceButtons && !showModoButtons && !showConfirmButtons && (
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
