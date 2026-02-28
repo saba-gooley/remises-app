@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 
+export const maxDuration = 30;
+
 const REQUIRED_FIELDS = [
   "tipoViaje",
   "fechaViaje",
@@ -227,7 +229,7 @@ export async function POST(request: Request) {
     try {
       const anthropic = new Anthropic({ apiKey });
       response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       messages: [
