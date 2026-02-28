@@ -36,15 +36,122 @@ type DatosExtraidos = Partial<{
   notas: string;
 }>;
 
+const SNAKE_TO_CAMEL: Record<string, keyof DatosExtraidos> = {
+  tipo_viaje: "tipoViaje",
+  fecha_viaje: "fechaViaje",
+  hora_viaje: "horaViaje",
+  origen_calle: "origenCalle",
+  origen_altura: "origenAltura",
+  origen_localidad: "origenLocalidad",
+  destino_calle: "destinoCalle",
+  destino_altura: "destinoAltura",
+  destino_localidad: "destinoLocalidad",
+  pasajero_nombre: "pasajeroNombre",
+  pasajero_telefono: "pasajeroTelefono",
+  ida_y_vuelta: "idaYVuelta",
+  con_espera: "conEspera",
+  es_recurrente: "esRecurrente",
+  centro_costos: "centroCostos",
+  id_viaje: "idViaje",
+  solicitado_por: "solicitadoPor",
+};
+
+function isEmpty(val: unknown): boolean {
+  if (val === null || val === undefined) return true;
+  if (typeof val === "string") return !val.trim();
+  return false;
+}
+
+/** Normaliza hora a HH:MM (24h). Acepta "18:00 hs", "18.00", "9:00 am". */
+function normalizeHora(val: unknown): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim();
+  if (!s) return null;
+  let cleaned = s.replace(/\s*(hs|h\.?|hrs?|horas?)\s*$/gi, "").trim();
+  cleaned = cleaned.replace(/\./g, ":");
+  const match24 = cleaned.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const h = parseInt(match24[1]!, 10);
+    const m = parseInt(match24[2]!, 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+  const match12 = cleaned.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (match12) {
+    let h = parseInt(match12[1]!, 10);
+    const m = parseInt(match12[2]!, 10);
+    const ampm = match12[3]!.toLowerCase();
+    if (m >= 0 && m <= 59) {
+      if (ampm === "pm" && h !== 12) h += 12;
+      if (ampm === "am" && h === 12) h = 0;
+      if (h >= 0 && h <= 23) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+  const digits = cleaned.replace(/\D/g, "");
+  if (digits.length === 4) {
+    const h = parseInt(digits.slice(0, 2), 10);
+    const m = parseInt(digits.slice(2), 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+  return s;
+}
+
+/** Normaliza fecha a YYYY-MM-DD. Acepta DD/MM/YYYY, YYYY-MM-DD. */
+function normalizeFecha(val: unknown): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim();
+  if (!s) return null;
+  const ddmmyyyy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddmmyyyy) {
+    const day = parseInt(ddmmyyyy[1]!, 10);
+    const month = parseInt(ddmmyyyy[2]!, 10);
+    const year = parseInt(ddmmyyyy[3]!, 10);
+    const d = new Date(year, month - 1, day);
+    if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day) {
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+  }
+  const yyyymmdd = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (yyyymmdd) return s;
+  return s;
+}
+
+/** Normaliza datos extraídos: claves camelCase, hora en HH:MM, fecha en YYYY-MM-DD. */
+function normalizeDatos(raw: Record<string, unknown>): DatosExtraidos {
+  const out: DatosExtraidos = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const camelKey = SNAKE_TO_CAMEL[key] ?? (key as keyof DatosExtraidos);
+    if (value === null || value === undefined) continue;
+    if (camelKey === "horaViaje") {
+      const normalized = normalizeHora(value);
+      if (normalized) out.horaViaje = normalized;
+    } else if (camelKey === "fechaViaje") {
+      const normalized = normalizeFecha(value);
+      if (normalized) out.fechaViaje = normalized;
+    } else if (typeof value === "string") {
+      (out as Record<string, unknown>)[camelKey] = value.trim();
+    } else {
+      (out as Record<string, unknown>)[camelKey] = value;
+    }
+  }
+  return out;
+}
+
 const SYSTEM_PROMPT = `Eres un asistente que interpreta mensajes en español para extraer datos de una reserva de remis/traslado.
 El usuario escribe en texto libre (ej: "necesito un remis mañana a las 9 de Corrientes 1234 CABA a Libertador 5678 para Juan, teléfono 1134567890").
-Debes extraer los campos de la reserva y devolver ÚNICAMENTE un JSON válido, sin markdown ni texto adicional, con esta estructura exacta:
+
+IMPORTANTE: Extrae TODOS los datos que puedas inferir del mensaje. Solo pon null en campos que realmente no aparecen ni se pueden deducir.
+
+Debes devolver ÚNICAMENTE un JSON válido, sin markdown ni texto adicional, con esta estructura exacta (usa camelCase en las claves):
 
 {
   "datos": {
     "tipoViaje": "pasajero" o "mensajeria" (si no se menciona, "pasajero"),
-    "fechaViaje": "YYYY-MM-DD" (inferir "mañana", "pasado mañana", "el 15/03" etc.; si no se puede, null),
-    "horaViaje": "HH:MM" en 24h (ej: "09:00", "14:30"; convertir "9 de la mañana" a "09:00"),
+    "fechaViaje": SIEMPRE en formato "YYYY-MM-DD" (ej: 2026-03-15). Inferir "mañana", "pasado mañana", "el 15/03", "15/3/26". Si no se puede, null),
+    "horaViaje": SIEMPRE en formato "HH:MM" en 24h, SIN sufijos (ej: "09:00", "18:00"). NUNCA incluyas "hs", "h.", "hrs". Convertir "9 de la mañana" a "09:00", "18:00 hs" a "18:00". Si no se puede, null),
     "origenCalle": string o null,
     "origenAltura": string o null,
     "origenLocalidad": string o null,
@@ -61,16 +168,16 @@ Debes extraer los campos de la reserva y devolver ÚNICAMENTE un JSON válido, s
     "solicitadoPor": string o null,
     "notas": string o null
   },
-  "camposFaltantes": ["nombreDelCampo", ...],
-  "mensajeFaltantes": "Frase amigable indicando qué datos faltan para completar la reserva, en español."
+  "camposFaltantes": ["solo las claves camelCase que están null o vacías en datos y son obligatorias para la reserva"],
+  "mensajeFaltantes": "Frase amigable indicando SOLO los datos que realmente faltan, en español."
 }
 
-Reglas:
-- Fechas siempre en YYYY-MM-DD. Si el usuario dice "mañana" usa la fecha de mañana.
-- Horas siempre en HH:MM (24 horas).
-- Los campos no extraíbles van en null en "datos".
-- En "camposFaltantes" lista las claves de "datos" que están null o vacías y que son necesarias para una reserva (origen, destino, fecha, hora, pasajero, teléfono).
-- "mensajeFaltantes" debe ser una sola oración o dos, clara para el usuario (ej: "Para completar la reserva necesito la fecha del viaje y el teléfono de contacto.").`;
+Reglas obligatorias:
+- fechaViaje: SIEMPRE YYYY-MM-DD. Nunca devuelvas DD/MM/YYYY ni otro formato.
+- horaViaje: SIEMPRE HH:MM (dos dígitos hora, dos dígitos minutos). Sin "hs", sin "hs.", sin espacios extra.
+- Extrae todo lo que el texto indique: direcciones (calle y número por separado si se puede), localidad (CABA, Buenos Aires, etc.), nombre y teléfono del pasajero.
+- En "camposFaltantes" incluye ÚNICAMENTE los campos que en "datos" quedaron null o vacíos. Si un campo tiene valor, NO lo incluyas en camposFaltantes.
+- "mensajeFaltantes" debe describir solo lo que falta (ej: "Faltan la fecha del viaje y el teléfono." o "Ya tengo todo, solo confirmá si querés agregar algo más." si no falta nada).`;
 
 export async function POST(request: Request) {
   try {
@@ -128,26 +235,20 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!parsed.datos || typeof parsed.datos !== "object") {
-      parsed = {
-        datos: {},
-        camposFaltantes: [...REQUIRED_FIELDS],
-        mensajeFaltantes:
-          "No pude extraer los datos. Por favor indicá origen, destino, fecha, hora, nombre del pasajero y teléfono.",
-      };
-    }
-
-    const datos = parsed.datos as DatosExtraidos;
-    const camposFaltantes =
-      Array.isArray(parsed.camposFaltantes) && parsed.camposFaltantes.length > 0
-        ? parsed.camposFaltantes
-        : (REQUIRED_FIELDS as readonly string[]).filter(
-            (k) => !datos[k as keyof DatosExtraidos],
-          );
+    const rawDatos =
+      parsed.datos && typeof parsed.datos === "object"
+        ? (parsed.datos as Record<string, unknown>)
+        : {};
+    const datos = normalizeDatos(rawDatos);
+    const camposFaltantes = (REQUIRED_FIELDS as readonly string[]).filter((k) =>
+      isEmpty(datos[k as keyof DatosExtraidos]),
+    );
     const mensajeFaltantes =
-      typeof parsed.mensajeFaltantes === "string" && parsed.mensajeFaltantes
-        ? parsed.mensajeFaltantes
-        : "Para completar la reserva faltan algunos datos. Te los voy a pedir uno por uno.";
+      typeof parsed.mensajeFaltantes === "string" && parsed.mensajeFaltantes.trim()
+        ? parsed.mensajeFaltantes.trim()
+        : camposFaltantes.length > 0
+          ? `Para completar la reserva faltan: ${camposFaltantes.join(", ")}.`
+          : "Ya tengo todos los datos obligatorios. Te voy a preguntar por el resto.";
 
     return NextResponse.json({
       datos,

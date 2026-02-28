@@ -81,9 +81,60 @@ const STEP_TO_ANSWER_KEY: Record<string, keyof Answers> = {
   pasajero_telefono: "pasajeroTelefono",
 };
 
-/** Parsea y normaliza hora a HH:MM. Acepta "14:25", "2:25 pm", "14:25 hs". Retorna null si no es válido. */
+/** Mapeo snake_case -> camelCase para normalizar respuesta de la API. */
+const API_KEY_TO_CAMEL: Record<string, keyof Answers> = {
+  tipo_viaje: "tipoViaje",
+  fecha_viaje: "fechaViaje",
+  hora_viaje: "horaViaje",
+  origen_calle: "origenCalle",
+  origen_altura: "origenAltura",
+  origen_localidad: "origenLocalidad",
+  destino_calle: "destinoCalle",
+  destino_altura: "destinoAltura",
+  destino_localidad: "destinoLocalidad",
+  pasajero_nombre: "pasajeroNombre",
+  pasajero_telefono: "pasajeroTelefono",
+  ida_y_vuelta: "idaYVuelta",
+  con_espera: "conEspera",
+  es_recurrente: "esRecurrente",
+  centro_costos: "centroCostos",
+  id_viaje: "idViaje",
+  solicitado_por: "solicitadoPor",
+};
+
+/** Normaliza los datos devueltos por la API: claves a camelCase y hora a HH:MM. */
+function normalizeDatosFromApi(datos: Record<string, unknown> | null): Partial<Answers> {
+  if (!datos || typeof datos !== "object") return {};
+  const out: Partial<Answers> = {};
+  for (const [key, value] of Object.entries(datos)) {
+    const camelKey = API_KEY_TO_CAMEL[key] ?? (key as keyof Answers);
+    if (value === null || value === undefined) continue;
+    if (camelKey === "horaViaje" && typeof value === "string") {
+      const normalized = parseAndValidateHora(value);
+      out.horaViaje = normalized ?? value.trim();
+    } else if (camelKey === "horaRecurrente" && typeof value === "string") {
+      const normalized = parseAndValidateHora(value);
+      out.horaRecurrente = normalized ?? value.trim();
+    } else {
+      (out as Record<string, unknown>)[camelKey] = typeof value === "string" ? value.trim() : value;
+    }
+  }
+  return out;
+}
+
+/** Normaliza un string de hora a formato HH:MM antes de validar. Acepta "18:00 hs", "18.00", "9:00 am", etc. */
+function normalizeHoraInput(input: string): string {
+  let s = input.trim();
+  s = s.replace(/\s*(hs|h\.?|hrs?|horas?)\s*$/gi, "").trim();
+  s = s.replace(/\./g, ":");
+  s = s.replace(/\s+/g, " ");
+  return s;
+}
+
+/** Parsea y normaliza hora a HH:MM. Acepta "14:25", "2:25 pm", "14:25 hs", "18.00 hs". Retorna null si no es válido. */
 function parseAndValidateHora(input: string): string | null {
-  const s = input.trim().replace(/\s*hs\.?\s*$/i, "").trim();
+  const s = normalizeHoraInput(input);
+  if (!s) return null;
   const match24 = s.match(/^(\d{1,2}):(\d{2})$/);
   if (match24) {
     const h = parseInt(match24[1]!, 10);
@@ -106,6 +157,21 @@ function parseAndValidateHora(input: string): string | null {
     }
     if (h < 0 || h > 23) return null;
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  const onlyDigits = s.replace(/\D/g, "");
+  if (onlyDigits.length === 3) {
+    const h = parseInt(onlyDigits.slice(0, 1), 10);
+    const m = parseInt(onlyDigits.slice(1), 10);
+    if (h >= 0 && h <= 9 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+  if (onlyDigits.length === 4) {
+    const h = parseInt(onlyDigits.slice(0, 2), 10);
+    const m = parseInt(onlyDigits.slice(2), 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
   }
   return null;
 }
@@ -219,22 +285,26 @@ export default function ChatAgente() {
     addAgent("Tipo de viaje: 1) Pasajero  2) Mensajería");
   }, [addAgent]);
 
-  /** Devuelve el primer paso obligatorio que falta en `answers`. */
-  const getFirstMissingStep = useCallback((currentAnswers: Answers): string | null => {
-    for (const step of ORDERED_REQUIRED_STEPS) {
-      const key = STEP_TO_ANSWER_KEY[step];
-      if (!key) continue;
-      const val = currentAnswers[key];
-      if (
-        val === undefined ||
-        val === null ||
-        (typeof val === "string" && !val.trim())
-      ) {
-        return step;
-      }
-    }
-    return null;
+  /** True si el valor se considera vacío (no extraído). */
+  const isFieldEmpty = useCallback((val: unknown): boolean => {
+    if (val === undefined || val === null) return true;
+    if (typeof val === "string") return !val.trim();
+    return false;
   }, []);
+
+  /** Devuelve el primer paso obligatorio que falta en `answers`. Solo considera faltante si el valor está vacío o es null. */
+  const getFirstMissingStep = useCallback(
+    (currentAnswers: Answers): string | null => {
+      for (const step of ORDERED_REQUIRED_STEPS) {
+        const key = STEP_TO_ANSWER_KEY[step];
+        if (!key) continue;
+        const val = currentAnswers[key];
+        if (isFieldEmpty(val)) return step;
+      }
+      return null;
+    },
+    [isFieldEmpty],
+  );
 
   const advanceStep = useCallback(
     (currentStep: string, value: string, newAnswers: Answers) => {
@@ -551,8 +621,9 @@ export default function ChatAgente() {
         body: JSON.stringify({ texto: raw }),
       })
         .then((res) => res.json())
-        .then((data: { datos?: Partial<Answers>; mensajeFaltantes?: string }) => {
-          const datos = data.datos ?? {};
+        .then((data: { datos?: Record<string, unknown>; mensajeFaltantes?: string }) => {
+          const rawDatos = data.datos ?? {};
+          const datos = normalizeDatosFromApi(rawDatos);
           setAnswers((prev) => ({ ...prev, ...datos }));
           const merged = { ...answers, ...datos };
           const lineas: string[] = [];
