@@ -2,7 +2,7 @@
 
 import { useFieldArray, useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type TipoViaje = "pasajero" | "mensajeria";
@@ -55,8 +55,14 @@ type ReservaFormValues = {
 
 export default function NuevaReservaPage() {
   const router = useRouter();
+  const [configError, setConfigError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [camposConfig, setCamposConfig] = useState<{
+    id_viaje?: boolean;
+    centro_costos?: boolean;
+    solicitado_por?: boolean;
+  } | null>(null);
 
   const {
     register,
@@ -80,6 +86,68 @@ export default function NuevaReservaPage() {
   });
 
   const watchEsRecurrente = watch("esRecurrente");
+
+  // Cargar configuración de campos obligatorios por cliente
+  useEffect(() => {
+    const cargarConfiguracion = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session?.user?.email) {
+          return;
+        }
+
+        const { data: usuario, error: usuarioError } = await supabase
+          .from("usuarios")
+          .select("cliente_id")
+          .eq("email", session.user.email)
+          .maybeSingle();
+
+        if (usuarioError) {
+          setConfigError(usuarioError.message);
+          return;
+        }
+
+        if (!usuario?.cliente_id) {
+          return;
+        }
+
+        const { data: cliente, error: clienteError } = await supabase
+          .from("clientes")
+          .select("configuracion_campos")
+          .eq("id", usuario.cliente_id)
+          .maybeSingle();
+
+        if (clienteError) {
+          setConfigError(clienteError.message);
+          return;
+        }
+
+        if (cliente?.configuracion_campos) {
+          setCamposConfig(
+            cliente.configuracion_campos as {
+              id_viaje?: boolean;
+              centro_costos?: boolean;
+              solicitado_por?: boolean;
+            },
+          );
+        }
+      } catch (e: any) {
+        setConfigError(
+          e?.message ??
+            "No se pudo cargar la configuración de campos del cliente.",
+        );
+      }
+    };
+
+    void cargarConfiguracion();
+  }, []);
+
+  const requeridoIdViaje = !!camposConfig?.id_viaje;
+  const requeridoCentroCostos = !!camposConfig?.centro_costos;
+  const requeridoSolicitadoPor = !!camposConfig?.solicitado_por;
 
   const onSubmit = async (data: ReservaFormValues) => {
     setError(null);
@@ -194,11 +262,14 @@ export default function NuevaReservaPage() {
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   ID Viaje
+                  {requeridoIdViaje && (
+                    <span className="ml-0.5 text-red-600">*</span>
+                  )}
                 </label>
                 <input
                   type="text"
                   className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                  {...register("idViaje", { required: true })}
+                  {...register("idViaje", { required: requeridoIdViaje })}
                 />
               </div>
 
@@ -608,21 +679,31 @@ export default function NuevaReservaPage() {
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
                     Centro de costos
+                    {requeridoCentroCostos && (
+                      <span className="ml-0.5 text-red-600">*</span>
+                    )}
                   </label>
                   <input
                     type="text"
                     className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    {...register("centroCostos", { required: true })}
+                    {...register("centroCostos", {
+                      required: requeridoCentroCostos,
+                    })}
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
                     Solicitado por
+                    {requeridoSolicitadoPor && (
+                      <span className="ml-0.5 text-red-600">*</span>
+                    )}
                   </label>
                   <input
                     type="text"
                     className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    {...register("solicitadoPor", { required: true })}
+                    {...register("solicitadoPor", {
+                      required: requeridoSolicitadoPor,
+                    })}
                   />
                 </div>
               </div>
