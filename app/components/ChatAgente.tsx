@@ -318,7 +318,7 @@ export default function ChatAgente() {
       centro_costos: a.centroCostos ?? "",
       solicitado_por: a.solicitadoPor ?? "",
       mail_solicitante: session.user.email ?? null,
-      notas: a.notas || null,
+      notas: a.notas ? [a.notas] : [],
       estado: "a_confirmar",
     };
     const reservasAInsertar =
