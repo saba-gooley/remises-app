@@ -92,6 +92,7 @@ export default function NuevaReservaPage() {
 
       const baseReserva = {
         id_viaje: data.idViaje,
+        usuario_id: session?.user?.id ?? null,
         tipo_viaje: data.tipoViaje,
         fecha_viaje: data.fechaViaje,
         hora_viaje: data.horaViaje,

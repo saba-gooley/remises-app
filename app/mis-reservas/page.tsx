@@ -41,7 +41,7 @@ export default function MisReservasPage() {
       const { data, error: reservasError } = await supabase
         .from("reservas")
         .select("id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, estado")
-        .eq("solicitado_por", session.user.email)
+        .eq("usuario_id", session.user.id)
         .order("fecha_viaje", { ascending: false })
         .order("hora_viaje", { ascending: false });
 
