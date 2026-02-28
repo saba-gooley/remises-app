@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const destinatario = reserva.solicitado_por as string | null;
+    const destinatario = reserva.mail_solicitante as string | null;
 
     if (!destinatario) {
       return NextResponse.json(
