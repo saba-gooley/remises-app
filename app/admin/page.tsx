@@ -23,6 +23,7 @@ type Reserva = {
 };
 
 export default function AdminPage() {
+  const router = useRouter();
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
