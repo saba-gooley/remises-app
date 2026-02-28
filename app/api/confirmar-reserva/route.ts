@@ -15,10 +15,10 @@ const resend = new Resend(resendApiKey);
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const rawReservaId = body?.reservaId;
-    const reservaId = Number(rawReservaId);
+    const reservaId =
+      typeof body?.reservaId === "string" ? body.reservaId.trim() : "";
 
-    if (!Number.isFinite(reservaId) || reservaId <= 0) {
+    if (!reservaId) {
       return NextResponse.json(
         { error: "Parámetro 'reservaId' inválido." },
         { status: 400 },
