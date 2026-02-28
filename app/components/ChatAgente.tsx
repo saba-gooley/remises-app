@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Message = { role: "agent" | "user"; text: string };
@@ -49,6 +49,72 @@ type Answers = {
 const SALUDO =
   "¿En qué puedo ayudarte?\n1) Nueva reserva\n2) Consultar mis reservas";
 
+/** Parsea y normaliza hora a HH:MM. Acepta "14:25", "2:25 pm", "14:25 hs". Retorna null si no es válido. */
+function parseAndValidateHora(input: string): string | null {
+  const s = input.trim().replace(/\s*hs\.?\s*$/i, "").trim();
+  const match24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const h = parseInt(match24[1]!, 10);
+    const m = parseInt(match24[2]!, 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+    return null;
+  }
+  const match12 = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (match12) {
+    let h = parseInt(match12[1]!, 10);
+    const m = parseInt(match12[2]!, 10);
+    const ampm = match12[3]!.toLowerCase();
+    if (m < 0 || m > 59) return null;
+    if (ampm === "pm") {
+      if (h !== 12) h += 12;
+    } else {
+      if (h === 12) h = 0;
+    }
+    if (h < 0 || h > 23) return null;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+/** Parsea fecha DD/MM/YYYY o YYYY-MM-DD, valida que sea válida y futura. Retorna YYYY-MM-DD o null. */
+function parseAndValidateFecha(input: string): string | null {
+  const s = input.trim();
+  let day: number;
+  let month: number;
+  let year: number;
+  const ddmmyyyy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddmmyyyy) {
+    day = parseInt(ddmmyyyy[1]!, 10);
+    month = parseInt(ddmmyyyy[2]!, 10) - 1;
+    year = parseInt(ddmmyyyy[3]!, 10);
+  } else {
+    const yyyymmdd = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (yyyymmdd) {
+      year = parseInt(yyyymmdd[1]!, 10);
+      month = parseInt(yyyymmdd[2]!, 10) - 1;
+      day = parseInt(yyyymmdd[3]!, 10);
+    } else {
+      return null;
+    }
+  }
+  const date = new Date(year, month, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (date.getTime() < today.getTime()) {
+    return null;
+  }
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export default function ChatAgente() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -61,6 +127,7 @@ export default function ChatAgente() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const addAgent = useCallback((text: string) => {
     setMessages((m) => [...m, { role: "agent", text }]);
@@ -76,6 +143,12 @@ export default function ChatAgente() {
       addAgent(SALUDO);
     }
   }, [open, messages.length, addAgent]);
+
+  useEffect(() => {
+    if (open) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [open, messages, loading]);
 
   const loadConfigAndStart = useCallback(async () => {
     setLoading(true);
@@ -200,7 +273,7 @@ export default function ChatAgente() {
     (nextStep: string): string => {
       switch (nextStep) {
         case "fecha_viaje":
-          return "Fecha del viaje (YYYY-MM-DD):";
+          return "Fecha del viaje (DD/MM/YYYY):";
         case "hora_viaje":
           return "Hora del viaje (HH:MM):";
         case "origen_calle":
@@ -330,7 +403,7 @@ export default function ChatAgente() {
       .insert(reservasAInsertar)
       .select("id");
     if (reservasError) {
-      addAgent("Error al crear la reserva: " + reservasError.message);
+      addAgent("Hubo un problema al crear la reserva. ¿Querés intentarlo de nuevo?");
       setSubmitting(false);
       return;
     }
@@ -345,7 +418,14 @@ export default function ChatAgente() {
           pasajero_telefono: p.pasajeroTelefono ?? null,
         })),
       );
-      await supabase.from("paradas").insert(paradasPayload);
+      const { error: paradasError } = await supabase
+        .from("paradas")
+        .insert(paradasPayload);
+      if (paradasError) {
+        addAgent("Hubo un problema al crear la reserva. ¿Querés intentarlo de nuevo?");
+        setSubmitting(false);
+        return;
+      }
     }
     addAgent("Reserva creada correctamente. Será confirmada por el operador.");
     setStep("greeting");
@@ -378,12 +458,26 @@ export default function ChatAgente() {
     setInputValue("");
     const newAnswers = { ...answers };
 
-    if (step === "tipo_viaje") {
-      newAnswers.tipoViaje = raw === "2" ? "mensajeria" : "pasajero";
-    } else if (step === "fecha_viaje") {
-      newAnswers.fechaViaje = value;
+    if (step === "fecha_viaje") {
+      const parsed = parseAndValidateFecha(raw);
+      if (!parsed) {
+        addAgent(
+          "No entendí la fecha. Por favor ingresá la fecha en formato DD/MM/YYYY, por ejemplo 15/03/2026",
+        );
+        return;
+      }
+      newAnswers.fechaViaje = parsed;
     } else if (step === "hora_viaje") {
-      newAnswers.horaViaje = value;
+      const parsed = parseAndValidateHora(raw);
+      if (!parsed) {
+        addAgent(
+          "No entendí el formato de la hora. Por favor ingresá la hora en formato HH:MM, por ejemplo 14:25",
+        );
+        return;
+      }
+      newAnswers.horaViaje = parsed;
+    } else if (step === "tipo_viaje") {
+      newAnswers.tipoViaje = raw === "2" ? "mensajeria" : "pasajero";
     } else if (step === "origen_calle") {
       newAnswers.origenCalle = value;
     } else if (step === "origen_altura") {
@@ -431,7 +525,14 @@ export default function ChatAgente() {
     } else if (step === "dias_recurrente") {
       newAnswers.diasRecurrente = value.split(/[,;]/).map((d) => d.trim()).filter(Boolean);
     } else if (step === "hora_recurrente") {
-      newAnswers.horaRecurrente = value;
+      const parsed = parseAndValidateHora(raw);
+      if (!parsed) {
+        addAgent(
+          "No entendí el formato de la hora. Por favor ingresá la hora en formato HH:MM, por ejemplo 14:25",
+        );
+        return;
+      }
+      newAnswers.horaRecurrente = parsed;
     } else if (step === "fecha_inicio_recurrente") {
       newAnswers.fechaInicioRecurrente = value;
     } else if (step === "fecha_fin_recurrente") {
@@ -570,6 +671,7 @@ export default function ChatAgente() {
                   </div>
                 </div>
               )}
+              <div ref={messagesEndRef} aria-hidden="true" />
             </div>
             <div className="border-t border-zinc-200 p-3">
               {showChoiceButtons && (
