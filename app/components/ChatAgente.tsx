@@ -104,18 +104,29 @@ function formatFechaDisplay(fecha: string | undefined): string {
   return fecha;
 }
 
-/** Arma el resumen "Entendí lo siguiente: ..." con los datos extraídos. */
+/** Arma el resumen "Entendí lo siguiente: ..." con los datos extraídos. Usa solo claves camelCase (tipoViaje, fechaViaje, etc.). */
 function buildResumenEntendido(a: Partial<Answers>): string {
   const partes: string[] = [];
-  if (a.tipoViaje) partes.push(`Tipo: ${a.tipoViaje === "mensajeria" ? "Mensajería" : "Pasajero"}`);
-  if (a.fechaViaje) partes.push(`Fecha: ${formatFechaDisplay(a.fechaViaje)}`);
-  if (a.horaViaje) partes.push(`Hora: ${a.horaViaje}`);
-  const origen = [a.origenCalle, a.origenAltura].filter(Boolean).join(" ").trim();
-  if (origen || a.origenLocalidad) partes.push(`Origen: ${[origen, a.origenLocalidad].filter(Boolean).join(" ").trim()}`);
-  const destino = [a.destinoCalle, a.destinoAltura].filter(Boolean).join(" ").trim();
-  if (destino || a.destinoLocalidad) partes.push(`Destino: ${[destino, a.destinoLocalidad].filter(Boolean).join(" ").trim()}`);
-  if (a.pasajeroNombre) partes.push(`Pasajero: ${a.pasajeroNombre}`);
-  if (a.pasajeroTelefono) partes.push(`Tel: ${a.pasajeroTelefono}`);
+  const tipo = a.tipoViaje != null && String(a.tipoViaje).trim() ? a.tipoViaje : "";
+  if (tipo) partes.push(`Tipo: ${tipo === "mensajeria" ? "Mensajería" : "Pasajero"}`);
+  const fecha = a.fechaViaje != null ? formatFechaDisplay(String(a.fechaViaje)) : "";
+  if (fecha) partes.push(`Fecha: ${fecha}`);
+  const hora = a.horaViaje != null ? String(a.horaViaje).trim() : "";
+  if (hora) partes.push(`Hora: ${hora}`);
+  const origenCalle = a.origenCalle != null ? String(a.origenCalle).trim() : "";
+  const origenAltura = a.origenAltura != null ? String(a.origenAltura).trim() : "";
+  const origenLocalidad = a.origenLocalidad != null ? String(a.origenLocalidad).trim() : "";
+  const origen = [origenCalle, origenAltura].filter(Boolean).join(" ").trim();
+  if (origen || origenLocalidad) partes.push(`Origen: ${[origen, origenLocalidad].filter(Boolean).join(" ").trim()}`);
+  const destinoCalle = a.destinoCalle != null ? String(a.destinoCalle).trim() : "";
+  const destinoAltura = a.destinoAltura != null ? String(a.destinoAltura).trim() : "";
+  const destinoLocalidad = a.destinoLocalidad != null ? String(a.destinoLocalidad).trim() : "";
+  const destino = [destinoCalle, destinoAltura].filter(Boolean).join(" ").trim();
+  if (destino || destinoLocalidad) partes.push(`Destino: ${[destino, destinoLocalidad].filter(Boolean).join(" ").trim()}`);
+  const pasajero = a.pasajeroNombre != null ? String(a.pasajeroNombre).trim() : "";
+  if (pasajero) partes.push(`Pasajero: ${pasajero}`);
+  const tel = a.pasajeroTelefono != null ? String(a.pasajeroTelefono).trim() : "";
+  if (tel) partes.push(`Tel: ${tel}`);
   return partes.length > 0 ? `Entendí lo siguiente: ${partes.join(", ")}` : "No pude extraer datos del mensaje.";
 }
 

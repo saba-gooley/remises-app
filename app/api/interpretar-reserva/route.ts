@@ -179,7 +179,30 @@ Reglas obligatorias:
 - En "camposFaltantes" incluye ÚNICAMENTE los campos que en "datos" quedaron null o vacíos. Si un campo tiene valor, NO lo incluyas en camposFaltantes.
 - "mensajeFaltantes" debe describir solo lo que falta (ej: "Faltan la fecha del viaje y el teléfono." o "Ya tengo todo, solo confirmá si querés agregar algo más." si no falta nada).`;
 
+/** Claves que el cliente espera en datos (camelCase). */
+const DATOS_RESPONSE_KEYS = [
+  "tipoViaje", "fechaViaje", "horaViaje",
+  "origenCalle", "origenAltura", "origenLocalidad",
+  "destinoCalle", "destinoAltura", "destinoLocalidad",
+  "pasajeroNombre", "pasajeroTelefono",
+  "idaYVuelta", "conEspera", "esRecurrente",
+  "centroCostos", "idViaje", "solicitadoPor", "notas",
+] as const;
+
+/** Convierte datos normalizados a un objeto con claves exactas para el cliente. */
+function toResponseDatos(normalized: DatosExtraidos): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of DATOS_RESPONSE_KEYS) {
+    const val = normalized[key as keyof DatosExtraidos];
+    if (val !== undefined && val !== null && (typeof val !== "string" || val.trim() !== "")) {
+      out[key] = typeof val === "string" ? val.trim() : val;
+    }
+  }
+  return out;
+}
+
 export async function POST(request: Request) {
+  console.log("[interpretar-reserva] ANTHROPIC_API_KEY:", process.env.ANTHROPIC_API_KEY ? "definida" : "undefined");
   try {
     const body = await request.json();
     const texto =
@@ -200,8 +223,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const anthropic = new Anthropic({ apiKey });
-    const response = await anthropic.messages.create({
+    let response: Awaited<ReturnType<InstanceType<typeof Anthropic>["messages"]["create"]>>;
+    try {
+      const anthropic = new Anthropic({ apiKey });
+      response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
@@ -212,6 +237,22 @@ export async function POST(request: Request) {
         },
       ],
     });
+    } catch (anthropicError: unknown) {
+      const err = anthropicError as Error & { status?: number; error?: unknown };
+      console.error("[interpretar-reserva] Error Anthropic:", err);
+      return NextResponse.json(
+        {
+          error: "Error al llamar a Anthropic.",
+          debug: {
+            message: err?.message,
+            name: err?.name,
+            status: err?.status,
+            error: err?.error,
+          },
+        },
+        { status: 502 },
+      );
+    }
 
     const textContent = response.content.find((c) => c.type === "text");
     const rawText =
@@ -239,9 +280,10 @@ export async function POST(request: Request) {
       parsed.datos && typeof parsed.datos === "object"
         ? (parsed.datos as Record<string, unknown>)
         : {};
-    const datos = normalizeDatos(rawDatos);
+    const datosNormalized = normalizeDatos(rawDatos);
+    const datos = toResponseDatos(datosNormalized);
     const camposFaltantes = (REQUIRED_FIELDS as readonly string[]).filter((k) =>
-      isEmpty(datos[k as keyof DatosExtraidos]),
+      isEmpty(datosNormalized[k as keyof DatosExtraidos]),
     );
     const mensajeFaltantes =
       typeof parsed.mensajeFaltantes === "string" && parsed.mensajeFaltantes.trim()
@@ -255,10 +297,18 @@ export async function POST(request: Request) {
       camposFaltantes,
       mensajeFaltantes,
     });
-  } catch (err) {
+  } catch (err: unknown) {
+    const e = err as Error & { status?: number };
     console.error("[interpretar-reserva]", err);
     return NextResponse.json(
-      { error: "Error al interpretar el mensaje." },
+      {
+        error: "Error al interpretar el mensaje.",
+        debug: {
+          message: e?.message,
+          name: e?.name,
+          status: e?.status,
+        },
+      },
       { status: 500 },
     );
   }
