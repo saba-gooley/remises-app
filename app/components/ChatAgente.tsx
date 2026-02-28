@@ -81,6 +81,44 @@ const STEP_TO_ANSWER_KEY: Record<string, keyof Answers> = {
   pasajero_telefono: "pasajeroTelefono",
 };
 
+/** camelCase (API) -> step id para ordenar por ORDERED_REQUIRED_STEPS. */
+const CAMEL_TO_STEP: Record<string, string> = {
+  tipoViaje: "tipo_viaje",
+  fechaViaje: "fecha_viaje",
+  horaViaje: "hora_viaje",
+  origenCalle: "origen_calle",
+  origenAltura: "origen_altura",
+  origenLocalidad: "origen_localidad",
+  destinoCalle: "destino_calle",
+  destinoAltura: "destino_altura",
+  destinoLocalidad: "destino_localidad",
+  pasajeroNombre: "pasajero_nombre",
+  pasajeroTelefono: "pasajero_telefono",
+};
+
+/** Formatea fecha YYYY-MM-DD a DD/MM/YYYY para mostrar. */
+function formatFechaDisplay(fecha: string | undefined): string {
+  if (!fecha || !fecha.trim()) return "";
+  const m = fecha.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return fecha;
+}
+
+/** Arma el resumen "Entendí lo siguiente: ..." con los datos extraídos. */
+function buildResumenEntendido(a: Partial<Answers>): string {
+  const partes: string[] = [];
+  if (a.tipoViaje) partes.push(`Tipo: ${a.tipoViaje === "mensajeria" ? "Mensajería" : "Pasajero"}`);
+  if (a.fechaViaje) partes.push(`Fecha: ${formatFechaDisplay(a.fechaViaje)}`);
+  if (a.horaViaje) partes.push(`Hora: ${a.horaViaje}`);
+  const origen = [a.origenCalle, a.origenAltura].filter(Boolean).join(" ").trim();
+  if (origen || a.origenLocalidad) partes.push(`Origen: ${[origen, a.origenLocalidad].filter(Boolean).join(" ").trim()}`);
+  const destino = [a.destinoCalle, a.destinoAltura].filter(Boolean).join(" ").trim();
+  if (destino || a.destinoLocalidad) partes.push(`Destino: ${[destino, a.destinoLocalidad].filter(Boolean).join(" ").trim()}`);
+  if (a.pasajeroNombre) partes.push(`Pasajero: ${a.pasajeroNombre}`);
+  if (a.pasajeroTelefono) partes.push(`Tel: ${a.pasajeroTelefono}`);
+  return partes.length > 0 ? `Entendí lo siguiente: ${partes.join(", ")}` : "No pude extraer datos del mensaje.";
+}
+
 /** Mapeo snake_case -> camelCase para normalizar respuesta de la API. */
 const API_KEY_TO_CAMEL: Record<string, keyof Answers> = {
   tipo_viaje: "tipoViaje",
@@ -225,6 +263,7 @@ export default function ChatAgente() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [missingStepsAfterDictar, setMissingStepsAfterDictar] = useState<string[] | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const addAgent = useCallback((text: string) => {
@@ -281,6 +320,7 @@ export default function ChatAgente() {
   }, [addAgent]);
 
   const startGuidedFlow = useCallback(() => {
+    setMissingStepsAfterDictar(null);
     setStep("tipo_viaje");
     addAgent("Tipo de viaje: 1) Pasajero  2) Mensajería");
   }, [addAgent]);
@@ -568,6 +608,7 @@ export default function ChatAgente() {
     setStep("greeting");
     setAnswers({});
     setParadaIndex(0);
+    setMissingStepsAfterDictar(null);
     setSubmitting(false);
   }, [session, answers, addAgent]);
 
@@ -621,31 +662,34 @@ export default function ChatAgente() {
         body: JSON.stringify({ texto: raw }),
       })
         .then((res) => res.json())
-        .then((data: { datos?: Record<string, unknown>; mensajeFaltantes?: string }) => {
+        .then((data: { datos?: Record<string, unknown>; camposFaltantes?: string[]; mensajeFaltantes?: string }) => {
           const rawDatos = data.datos ?? {};
           const datos = normalizeDatosFromApi(rawDatos);
           setAnswers((prev) => ({ ...prev, ...datos }));
           const merged = { ...answers, ...datos };
-          const lineas: string[] = [];
-          if (merged.tipoViaje) lineas.push(`Tipo: ${merged.tipoViaje === "mensajeria" ? "Mensajería" : "Pasajero"}`);
-          if (merged.fechaViaje) lineas.push(`Fecha: ${merged.fechaViaje}`);
-          if (merged.horaViaje) lineas.push(`Hora: ${merged.horaViaje}`);
-          if (merged.origenCalle || merged.origenLocalidad)
-            lineas.push(`Origen: ${[merged.origenCalle, merged.origenAltura].filter(Boolean).join(" ")} ${merged.origenLocalidad ?? ""}`.trim());
-          if (merged.destinoCalle || merged.destinoLocalidad)
-            lineas.push(`Destino: ${[merged.destinoCalle, merged.destinoAltura].filter(Boolean).join(" ")} ${merged.destinoLocalidad ?? ""}`.trim());
-          if (merged.pasajeroNombre) lineas.push(`Pasajero: ${merged.pasajeroNombre}`);
-          if (merged.pasajeroTelefono) lineas.push(`Tel: ${merged.pasajeroTelefono}`);
-          if (lineas.length > 0) {
-            addAgent("Esto es lo que entendí:\n" + lineas.join("\n"));
+          const resumenEntendido = buildResumenEntendido(merged);
+          addAgent(resumenEntendido);
+
+          const camposFaltantes = Array.isArray(data.camposFaltantes) ? data.camposFaltantes : [];
+          if (camposFaltantes.length === 0) {
+            setMissingStepsAfterDictar(null);
+            setStep("confirmar");
+            addAgent(buildResumen(merged));
+            return;
           }
-          addAgent(data.mensajeFaltantes ?? "Para completar la reserva faltan algunos datos.");
-          const firstMissing = getFirstMissingStep(merged);
+
+          const missingSteps = camposFaltantes
+            .map((c) => CAMEL_TO_STEP[c] ?? c)
+            .filter((s) => ORDERED_REQUIRED_STEPS.includes(s));
+          const orderedMissing = ORDERED_REQUIRED_STEPS.filter((s) => missingSteps.includes(s));
+          setMissingStepsAfterDictar(orderedMissing);
+          const firstMissing = orderedMissing[0];
           if (firstMissing) {
             setStep(firstMissing);
             const q = getNextQuestion(firstMissing);
             if (q) addAgent(q);
           } else {
+            setMissingStepsAfterDictar(null);
             setStep("paradas_sn");
             addAgent("¿Tiene paradas intermedias? (Sí/No)");
           }
@@ -761,6 +805,22 @@ export default function ChatAgente() {
       return;
     }
 
+    if (missingStepsAfterDictar && missingStepsAfterDictar.includes(step)) {
+      setAnswers(newAnswers);
+      const idx = missingStepsAfterDictar.indexOf(step);
+      const nextMissing = missingStepsAfterDictar[idx + 1];
+      if (nextMissing !== undefined) {
+        setStep(nextMissing);
+        const q = getNextQuestion(nextMissing);
+        if (q) addAgent(q);
+      } else {
+        setMissingStepsAfterDictar(null);
+        setStep("paradas_sn");
+        addAgent("¿Tiene paradas intermedias? (Sí/No)");
+      }
+      return;
+    }
+
     setAnswers(newAnswers);
     const nextStep = advanceStep(step, value, newAnswers);
     if (nextStep === "parada_calle" && step === "parada_otra") {
@@ -797,6 +857,7 @@ export default function ChatAgente() {
     answers,
     paradaIndex,
     config,
+    missingStepsAfterDictar,
     addUser,
     addAgent,
     advanceStep,
