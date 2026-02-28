@@ -7,7 +7,8 @@ import { supabase } from "@/lib/supabase";
 type Reserva = {
   id: number;
   id_viaje: string | null;
-  fecha_hora: string | null;
+  fecha_viaje: string | null;
+  hora_viaje: string | null;
   origen_calle: string | null;
   origen_altura: string | null;
   origen_localidad: string | null;
@@ -39,9 +40,10 @@ export default function MisReservasPage() {
 
       const { data, error: reservasError } = await supabase
         .from("reservas")
-        .select("id, id_viaje, fecha_hora, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, estado")
+        .select("id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, estado")
         .eq("solicitado_por", session.user.email)
-        .order("fecha_hora", { ascending: false });
+        .order("fecha_viaje", { ascending: false })
+        .order("hora_viaje", { ascending: false });
 
       if (reservasError) {
         setError(reservasError.message);
@@ -55,12 +57,20 @@ export default function MisReservasPage() {
     void fetchMisReservas();
   }, [router]);
 
-  const formatFechaHora = (fechaHora: string | null) => {
-    if (!fechaHora) return "-";
-    const d = new Date(fechaHora);
-    return d.toLocaleString("es-AR", {
+  const formatFechaHora = (
+    fechaViaje: string | null,
+    horaViaje: string | null,
+  ) => {
+    if (!fechaViaje) return "-";
+    if (horaViaje) {
+      const d = new Date(`${fechaViaje}T${horaViaje}`);
+      return d.toLocaleString("es-AR", {
+        dateStyle: "short",
+        timeStyle: "short",
+      });
+    }
+    return new Date(fechaViaje).toLocaleDateString("es-AR", {
       dateStyle: "short",
-      timeStyle: "short",
     });
   };
 
@@ -123,7 +133,7 @@ export default function MisReservasPage() {
                       {r.id}
                     </td>
                     <td className="px-3 py-2 text-zinc-700">
-                      {formatFechaHora(r.fecha_hora)}
+                      {formatFechaHora(r.fecha_viaje, r.hora_viaje)}
                     </td>
                     <td className="px-3 py-2 text-zinc-700">
                       {formatDireccion(

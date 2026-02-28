@@ -20,7 +20,8 @@ type ParadaIntermedia = {
 type ReservaFormValues = {
   idViaje: string;
   tipoViaje: TipoViaje;
-  fechaHora: string;
+  fechaViaje: string;
+  horaViaje: string;
 
   origenCalle: string;
   origenAltura: string;
@@ -88,7 +89,8 @@ export default function NuevaReservaPage() {
       const baseReserva = {
         id_viaje: data.idViaje,
         tipo_viaje: data.tipoViaje,
-        fecha_hora: data.fechaHora,
+        fecha_viaje: data.fechaViaje,
+        hora_viaje: data.horaViaje,
         origen_calle: data.origenCalle,
         origen_altura: data.origenAltura,
         origen_localidad: data.origenLocalidad,
@@ -199,7 +201,7 @@ export default function NuevaReservaPage() {
                 />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
                     Tipo de viaje
@@ -215,12 +217,23 @@ export default function NuevaReservaPage() {
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    Fecha y hora
+                    Fecha del viaje
                   </label>
                   <input
-                    type="datetime-local"
+                    type="date"
                     className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    {...register("fechaHora", { required: true })}
+                    {...register("fechaViaje", { required: true })}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    Hora del viaje
+                  </label>
+                  <input
+                    type="time"
+                    className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                    {...register("horaViaje", { required: true })}
                   />
                 </div>
               </div>

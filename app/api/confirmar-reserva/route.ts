@@ -58,12 +58,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const fecha = reserva.fecha_hora
-      ? new Date(reserva.fecha_hora).toLocaleDateString()
-      : "-";
-    const hora = reserva.fecha_hora
-      ? new Date(reserva.fecha_hora).toLocaleTimeString()
-      : "-";
+    const fecha = reserva.fecha_viaje ?? "-";
+    const hora = reserva.hora_viaje ?? "-";
 
     const origen = `${reserva.origen_calle ?? ""} ${
       reserva.origen_altura ?? ""

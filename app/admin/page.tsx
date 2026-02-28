@@ -8,7 +8,8 @@ type Reserva = {
   id: number;
   id_viaje: string | null;
   tipo_viaje: string | null;
-  fecha_hora: string | null;
+  fecha_viaje: string | null;
+  hora_viaje: string | null;
   origen_calle: string | null;
   origen_altura: string | null;
   origen_localidad: string | null;
@@ -35,7 +36,8 @@ export default function AdminPage() {
       .from("reservas")
       .select("*")
       .eq("estado", "a_confirmar")
-      .order("fecha_hora", { ascending: true });
+      .order("fecha_viaje", { ascending: true })
+      .order("hora_viaje", { ascending: true });
 
     if (reservasError) {
       setError(reservasError.message);
@@ -177,9 +179,9 @@ export default function AdminPage() {
                       {reserva.id_viaje}
                     </td>
                     <td className="px-3 py-2 text-xs text-zinc-700">
-                      {reserva.fecha_hora
-                        ? new Date(reserva.fecha_hora).toLocaleString()
-                        : "-"}
+                      {reserva.fecha_viaje && reserva.hora_viaje
+                        ? `${reserva.fecha_viaje} ${reserva.hora_viaje}`
+                        : reserva.fecha_viaje ?? "-"}
                     </td>
                     <td className="px-3 py-2 text-xs text-zinc-700">
                       {reserva.origen_calle} {reserva.origen_altura}
