@@ -20,7 +20,6 @@ type Reserva = {
   centro_costos: string | null;
   solicitado_por: string | null;
   estado: string | null;
-  tipo_tramo?: string | null;
 };
 
 export default function AdminPage() {

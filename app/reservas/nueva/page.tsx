@@ -118,15 +118,12 @@ export default function NuevaReservaPage() {
       // Regla de negocio indicada:
       // - Ida y vuelta CON espera -> 1 reserva
       // - Ida y vuelta SIN espera -> 2 reservas (ida y vuelta separadas)
-      const reservasAInsertar = [];
+      const reservasAInsertar: typeof baseReserva[] = [];
 
       if (data.idaYVuelta === "SI" && data.conEspera === "NO") {
-        reservasAInsertar.push(
-          { ...baseReserva, tipo_tramo: "ida" },
-          { ...baseReserva, tipo_tramo: "vuelta" },
-        );
+        reservasAInsertar.push(baseReserva, baseReserva);
       } else {
-        reservasAInsertar.push({ ...baseReserva, tipo_tramo: "unico" });
+        reservasAInsertar.push(baseReserva);
       }
 
       const { data: reservasInsertadas, error: reservasError } =
