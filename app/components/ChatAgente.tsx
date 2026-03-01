@@ -44,6 +44,7 @@ type Answers = {
   idViaje?: string;
   solicitadoPor?: string;
   notas?: string;
+  tieneParadas?: boolean;
 };
 
 const SALUDO =
@@ -95,6 +96,26 @@ const CAMEL_TO_STEP: Record<string, string> = {
   pasajeroNombre: "pasajero_nombre",
   pasajeroTelefono: "pasajero_telefono",
 };
+
+/** Devuelve el siguiente paso cuando se omitió paradas_sn (tieneParadas false). Solo pasos obligatorios por cliente o notas/confirmar. */
+function getNextStepAfterParadasOmitida(
+  answers: Partial<Answers>,
+  config: ConfigCampos | null,
+): string {
+  if (!answers.idaYVuelta) return "ida_y_vuelta";
+  if (answers.idaYVuelta === "SI" && !answers.conEspera) return "con_espera";
+  if (!answers.esRecurrente) return "es_recurrente";
+  if (answers.esRecurrente === "SI") {
+    if (!answers.diasRecurrente?.length) return "dias_recurrente";
+    if (!answers.horaRecurrente) return "hora_recurrente";
+    if (!answers.fechaInicioRecurrente) return "fecha_inicio_recurrente";
+    if (!answers.fechaFinRecurrente) return "fecha_fin_recurrente";
+  }
+  if (config?.centro_costos && !answers.centroCostos) return "centro_costos";
+  if (config?.id_viaje && !answers.idViaje) return "id_viaje";
+  if (config?.solicitado_por && !answers.solicitadoPor) return "solicitado_por";
+  return "notas";
+}
 
 /** Formatea fecha YYYY-MM-DD a DD/MM/YYYY para mostrar. */
 function formatFechaDisplay(fecha: string | undefined): string {
@@ -149,6 +170,7 @@ const API_KEY_TO_CAMEL: Record<string, keyof Answers> = {
   centro_costos: "centroCostos",
   id_viaje: "idViaje",
   solicitado_por: "solicitadoPor",
+  tiene_paradas: "tieneParadas",
 };
 
 /** Normaliza los datos devueltos por la API: claves a camelCase y hora a HH:MM. */
@@ -382,7 +404,7 @@ export default function ChatAgente() {
           case "pasajero_nombre":
             return "pasajero_telefono";
           case "pasajero_telefono":
-            return "paradas_sn";
+            return "centro_costos";
           case "paradas_sn":
             return value.toUpperCase().startsWith("S") ? "parada_calle" : "ida_y_vuelta";
           case "parada_calle":
@@ -664,6 +686,36 @@ export default function ChatAgente() {
       return;
     }
 
+    if (step === "modificar_indicar") {
+      setInputValue("");
+      setLoading(true);
+      const textoModif =
+        "El usuario quiere modificar su reserva. Dice: \"" +
+        raw +
+        '". Datos actuales de la reserva: ' +
+        JSON.stringify(answers);
+      fetch("/api/interpretar-reserva", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto: textoModif }),
+      })
+        .then((res) => res.json())
+        .then((data: { datos?: Record<string, unknown>; camposFaltantes?: string[] }) => {
+          const rawDatos = data.datos ?? {};
+          const datos = normalizeDatosFromApi(rawDatos);
+          setAnswers((prev) => ({ ...prev, ...datos }));
+          const merged = { ...answers, ...datos };
+          addAgent("Actualicé los datos. Resumen:");
+          addAgent(buildResumen(merged));
+          setStep("confirmar");
+        })
+        .catch(() => {
+          addAgent("No pude interpretar los cambios. Indicá de nuevo qué querés modificar o confirmá la reserva.");
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
+
     if (step === "dictar_texto") {
       setInputValue("");
       setLoading(true);
@@ -701,8 +753,16 @@ export default function ChatAgente() {
             if (q) addAgent(q);
           } else {
             setMissingStepsAfterDictar(null);
-            setStep("paradas_sn");
-            addAgent("¿Tiene paradas intermedias? (Sí/No)");
+            const tieneParadas = rawDatos.tieneParadas === true || rawDatos.tiene_paradas === true;
+            if (tieneParadas) {
+              setStep("paradas_sn");
+              addAgent("¿Tiene paradas intermedias? (Sí/No)");
+            } else {
+              const nextS = getNextStepAfterParadasOmitida(merged, config);
+              setStep(nextS);
+              const q = getNextQuestion(nextS);
+              if (q) addAgent(q);
+            }
           }
         })
         .catch(() => {
@@ -807,6 +867,10 @@ export default function ChatAgente() {
     } else if (step === "confirmar") {
       if (value.toUpperCase().startsWith("S")) {
         void submitReserva();
+      } else if (raw.toLowerCase().includes("modif")) {
+        addUser("Modificar");
+        addAgent("Indicá qué datos querés cambiar (por ejemplo: la hora, el destino).");
+        setStep("modificar_indicar");
       } else {
         addAgent("Reserva cancelada. ¿En qué más puedo ayudarte?");
         setStep("greeting");
@@ -1019,7 +1083,7 @@ export default function ChatAgente() {
                 </div>
               )}
               {showConfirmButtons && (
-                <div className="mb-2 flex gap-2">
+                <div className="mb-2 flex flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={submitting}
@@ -1031,6 +1095,17 @@ export default function ChatAgente() {
                     className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                   >
                     Sí, confirmar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addUser("Modificar");
+                      addAgent("Indicá qué datos querés cambiar (por ejemplo: la hora, el destino).");
+                      setStep("modificar_indicar");
+                    }}
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Modificar
                   </button>
                   <button
                     type="button"

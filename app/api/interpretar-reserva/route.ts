@@ -36,6 +36,7 @@ type DatosExtraidos = Partial<{
   idViaje: string;
   solicitadoPor: string;
   notas: string;
+  tieneParadas: boolean;
 }>;
 
 const SNAKE_TO_CAMEL: Record<string, keyof DatosExtraidos> = {
@@ -56,6 +57,7 @@ const SNAKE_TO_CAMEL: Record<string, keyof DatosExtraidos> = {
   centro_costos: "centroCostos",
   id_viaje: "idViaje",
   solicitado_por: "solicitadoPor",
+  tiene_paradas: "tieneParadas",
 };
 
 function isEmpty(val: unknown): boolean {
@@ -133,11 +135,16 @@ function normalizeDatos(raw: Record<string, unknown>): DatosExtraidos {
     } else if (camelKey === "fechaViaje") {
       const normalized = normalizeFecha(value);
       if (normalized) out.fechaViaje = normalized;
+    } else if (camelKey === "tieneParadas") {
+      out.tieneParadas = value === true || value === "true";
     } else if (typeof value === "string") {
       (out as Record<string, unknown>)[camelKey] = value.trim();
     } else {
       (out as Record<string, unknown>)[camelKey] = value;
     }
+  }
+  if (out.tieneParadas === undefined) {
+    out.tieneParadas = false;
   }
   return out;
 }
@@ -167,6 +174,10 @@ REGLAS DE EXTRACCIÓN:
 
 9. RECURRENTE: Si menciona explícitamente "recurrente", "todos los días", "semanal", etc., marcá esRecurrente = "SI". Si no se menciona explícitamente, asumir "NO".
 
+10. DATOS PARA FACTURA: Si menciona datos para facturación (Razón social, CUIT, dirección fiscal, "para facturar", "datos de factura", etc.), poné todo eso en el campo "notas".
+
+11. PARADAS INTERMEDIAS: Si menciona "parada", "paradas", "escala", "pasar por", marcá tieneParadas = true. Si NO menciona paradas intermedias, asumir tieneParadas = false (no preguntar después).
+
 FORMATO DE SALIDA: Devolvé ÚNICAMENTE un JSON válido, sin markdown ni texto adicional, con esta estructura (claves en camelCase):
 
 {
@@ -188,7 +199,8 @@ FORMATO DE SALIDA: Devolvé ÚNICAMENTE un JSON válido, sin markdown ni texto a
     "centroCostos": string o null,
     "idViaje": string o null,
     "solicitadoPor": string o null,
-    "notas": string o null
+    "notas": string o null,
+    "tieneParadas": true solo si menciona paradas intermedias; si no menciona, false
   },
   "camposFaltantes": ["solo claves camelCase de datos que están null o vacíos y son obligatorios"],
   "mensajeFaltantes": "Frase amigable indicando SOLO lo que falta, en español."
@@ -202,6 +214,7 @@ const DATOS_RESPONSE_KEYS = [
   "pasajeroNombre", "pasajeroTelefono",
   "idaYVuelta", "conEspera", "esRecurrente",
   "centroCostos", "idViaje", "solicitadoPor", "notas",
+  "tieneParadas",
 ] as const;
 
 /** Convierte datos normalizados a un objeto con claves exactas para el cliente. */
@@ -209,6 +222,10 @@ function toResponseDatos(normalized: DatosExtraidos): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of DATOS_RESPONSE_KEYS) {
     const val = normalized[key as keyof DatosExtraidos];
+    if (key === "tieneParadas") {
+      out[key] = val === true;
+      continue;
+    }
     if (val !== undefined && val !== null && (typeof val !== "string" || val.trim() !== "")) {
       out[key] = typeof val === "string" ? val.trim() : val;
     }
