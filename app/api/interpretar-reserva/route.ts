@@ -143,17 +143,35 @@ function normalizeDatos(raw: Record<string, unknown>): DatosExtraidos {
 }
 
 const SYSTEM_PROMPT = `Eres un asistente que interpreta mensajes en español para extraer datos de una reserva de remis/traslado.
-El usuario escribe en texto libre (ej: "necesito un remis mañana a las 9 de Corrientes 1234 CABA a Libertador 5678 para Juan, teléfono 1134567890").
 
-IMPORTANTE: Extrae TODOS los datos que puedas inferir del mensaje. Solo pon null en campos que realmente no aparecen ni se pueden deducir.
+REGLAS DE EXTRACCIÓN:
 
-Debes devolver ÚNICAMENTE un JSON válido, sin markdown ni texto adicional, con esta estructura exacta (usa camelCase en las claves):
+1. TIPO DE VIAJE: Si menciona "paquete", "documentación", "sobre", "mensajería", "encomienda", "mercadería", asumí tipoViaje = "mensajeria". Sino, "pasajero".
+
+2. FECHA:
+- Fechas explícitas (DD/MM, DD/MM/YYYY, "15 de marzo"): normalizá a YYYY-MM-DD
+- Si hay día de semana + número de día + mes, es fecha explícita
+- Si la fecha no está clara o no se menciona, dejar fechaViaje en null
+
+3. HORA: Normalizá SIEMPRE a HH:MM en formato 24hs. Ejemplos: "9 de la mañana" → "09:00", "18:00 hs" → "18:00", "6pm" → "18:00", "las 9" → "09:00"
+
+4. DIRECCIONES: Separar calle, altura y localidad cuando sea posible. "Austria 2247 CABA" → calle: "Austria", altura: "2247", localidad: "CABA"
+
+5. PASAJERO: Si es mensajería, el nombre del pasajero no es obligatorio.
+
+6. CAMPOS FALTANTES: Solo marcar como faltante lo que realmente NO aparece ni se puede inferir. Si un campo tiene valor, NO incluirlo en camposFaltantes.
+
+7. CON ESPERA: Si menciona "con espera", "espera", "esperar", "queda esperando", asumí conEspera = "SI". Si dice "sin espera" o no menciona, "NO" o null.
+
+8. IDA Y VUELTA: Si menciona "ida y vuelta", "vuelta", "regreso", idaYVuelta = "SI". Sino "NO" o null.
+
+FORMATO DE SALIDA: Devolvé ÚNICAMENTE un JSON válido, sin markdown ni texto adicional, con esta estructura (claves en camelCase):
 
 {
   "datos": {
-    "tipoViaje": "pasajero" o "mensajeria" (si no se menciona, "pasajero"),
-    "fechaViaje": SIEMPRE en formato "YYYY-MM-DD" (ej: 2026-03-15). Inferir "mañana", "pasado mañana", "el 15/03", "15/3/26". Si no se puede, null),
-    "horaViaje": SIEMPRE en formato "HH:MM" en 24h, SIN sufijos (ej: "09:00", "18:00"). NUNCA incluyas "hs", "h.", "hrs". Convertir "9 de la mañana" a "09:00", "18:00 hs" a "18:00". Si no se puede, null),
+    "tipoViaje": "pasajero" o "mensajeria",
+    "fechaViaje": "YYYY-MM-DD" o null,
+    "horaViaje": "HH:MM" en 24h sin sufijos (ej: "09:00", "18:00") o null,
     "origenCalle": string o null,
     "origenAltura": string o null,
     "origenLocalidad": string o null,
@@ -170,16 +188,9 @@ Debes devolver ÚNICAMENTE un JSON válido, sin markdown ni texto adicional, con
     "solicitadoPor": string o null,
     "notas": string o null
   },
-  "camposFaltantes": ["solo las claves camelCase que están null o vacías en datos y son obligatorias para la reserva"],
-  "mensajeFaltantes": "Frase amigable indicando SOLO los datos que realmente faltan, en español."
-}
-
-Reglas obligatorias:
-- fechaViaje: SIEMPRE YYYY-MM-DD. Nunca devuelvas DD/MM/YYYY ni otro formato.
-- horaViaje: SIEMPRE HH:MM (dos dígitos hora, dos dígitos minutos). Sin "hs", sin "hs.", sin espacios extra.
-- Extrae todo lo que el texto indique: direcciones (calle y número por separado si se puede), localidad (CABA, Buenos Aires, etc.), nombre y teléfono del pasajero.
-- En "camposFaltantes" incluye ÚNICAMENTE los campos que en "datos" quedaron null o vacíos. Si un campo tiene valor, NO lo incluyas en camposFaltantes.
-- "mensajeFaltantes" debe describir solo lo que falta (ej: "Faltan la fecha del viaje y el teléfono." o "Ya tengo todo, solo confirmá si querés agregar algo más." si no falta nada).`;
+  "camposFaltantes": ["solo claves camelCase de datos que están null o vacíos y son obligatorios"],
+  "mensajeFaltantes": "Frase amigable indicando SOLO lo que falta, en español."
+}`;
 
 /** Claves que el cliente espera en datos (camelCase). */
 const DATOS_RESPONSE_KEYS = [
