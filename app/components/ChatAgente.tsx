@@ -840,6 +840,18 @@ export default function ChatAgente() {
     if (nextStep) {
       let s = nextStep;
       while (true) {
+        if (s === "ida_y_vuelta" && (newAnswers.idaYVuelta === "SI" || newAnswers.idaYVuelta === "NO")) {
+          s = newAnswers.idaYVuelta === "SI" ? "con_espera" : "es_recurrente";
+          continue;
+        }
+        if (s === "con_espera" && (newAnswers.conEspera === "SI" || newAnswers.conEspera === "NO")) {
+          s = "es_recurrente";
+          continue;
+        }
+        if (s === "es_recurrente" && (newAnswers.esRecurrente === "SI" || newAnswers.esRecurrente === "NO")) {
+          s = newAnswers.esRecurrente === "SI" ? "dias_recurrente" : "centro_costos";
+          continue;
+        }
         if (s === "centro_costos" && !config?.centro_costos) {
           s = config?.id_viaje ? "id_viaje" : config?.solicitado_por ? "solicitado_por" : "notas";
           continue;

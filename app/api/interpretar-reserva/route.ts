@@ -161,9 +161,11 @@ REGLAS DE EXTRACCIÓN:
 
 6. CAMPOS FALTANTES: Solo marcar como faltante lo que realmente NO aparece ni se puede inferir. Si un campo tiene valor, NO incluirlo en camposFaltantes.
 
-7. CON ESPERA: Si menciona "con espera", "espera", "esperar", "queda esperando", asumí conEspera = "SI". Si dice "sin espera" o no menciona, "NO" o null.
+7. CON ESPERA: Si menciona "con espera", "esperar", "volver a buscar", marcá conEspera = "SI". Si no se menciona explícitamente, asumir "NO".
 
-8. IDA Y VUELTA: Si menciona "ida y vuelta", "vuelta", "regreso", idaYVuelta = "SI". Sino "NO" o null.
+8. IDA Y VUELTA: Si menciona explícitamente "ida y vuelta", "ir y volver", marcá idaYVuelta = "SI". Si no se menciona explícitamente, asumir "NO".
+
+9. RECURRENTE: Si menciona explícitamente "recurrente", "todos los días", "semanal", etc., marcá esRecurrente = "SI". Si no se menciona explícitamente, asumir "NO".
 
 FORMATO DE SALIDA: Devolvé ÚNICAMENTE un JSON válido, sin markdown ni texto adicional, con esta estructura (claves en camelCase):
 
@@ -180,9 +182,9 @@ FORMATO DE SALIDA: Devolvé ÚNICAMENTE un JSON válido, sin markdown ni texto a
     "destinoLocalidad": string o null,
     "pasajeroNombre": string o null,
     "pasajeroTelefono": string o null,
-    "idaYVuelta": "SI" o "NO" o null,
-    "conEspera": "SI" o "NO" o null,
-    "esRecurrente": "SI" o "NO" o null,
+    "idaYVuelta": "SI" si se menciona ida y vuelta; si no se menciona, "NO" (nunca null),
+    "conEspera": "SI" si se menciona espera; si no se menciona, "NO" (nunca null),
+    "esRecurrente": "SI" si se menciona recurrente; si no se menciona, "NO" (nunca null),
     "centroCostos": string o null,
     "idViaje": string o null,
     "solicitadoPor": string o null,
