@@ -750,7 +750,33 @@ export default function ChatAgente() {
 
     if (step === "confirmar_conversacional") {
       setInputValue("");
-      // Si el usuario escribe algo (respuesta a una pregunta de Claude), seguir conversando
+      const rawLower = raw.toLowerCase().trim();
+      // Confirmación explícita: crear la reserva
+      if (
+        rawLower === "si" || rawLower === "sí" ||
+        rawLower === "confirmar" || rawLower === "confirmo" ||
+        rawLower.startsWith("sí,") || rawLower.startsWith("si,") ||
+        rawLower === "dale" || rawLower === "ok" || rawLower === "listo"
+      ) {
+        addUser(raw);
+        setAnswers((prev) => ({ ...prev, ...datosConversacional }));
+        void submitReserva();
+        return;
+      }
+      // Cancelación explícita
+      if (
+        rawLower === "no" || rawLower === "cancelar" || rawLower === "no, cancelar" ||
+        rawLower === "no quiero" || rawLower.startsWith("no,")
+      ) {
+        addUser(raw);
+        addAgent("Reserva cancelada. ¿En qué más puedo ayudarte?");
+        setStep("greeting");
+        setAnswers({});
+        setHistorialConversacional([]);
+        setDatosConversacional({});
+        return;
+      }
+      // Cualquier otra respuesta: seguir conversando con Claude
       setLoading(true);
       const nuevoHistorial = [...historialConversacional];
       fetch("/api/chat-reserva", {
@@ -1054,7 +1080,6 @@ export default function ChatAgente() {
   const showChoiceButtons = step === "greeting";
   const showModoButtons = step === "modo_reserva";
   const showConfirmButtons = step === "confirmar";
-  const showConfirmConversacionalButtons = step === "confirmar_conversacional";
 
   return (
     <>
@@ -1185,47 +1210,6 @@ export default function ChatAgente() {
                     className="rounded-md border border-zinc-500 bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-200"
                   >
                     3) Chatear
-                  </button>
-                </div>
-              )}
-              {showConfirmConversacionalButtons && (
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => {
-                      addUser("Sí, confirmar");
-                      setAnswers((prev) => ({ ...prev, ...datosConversacional }));
-                      void submitReserva();
-                    }}
-                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-                  >
-                    Sí, confirmar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      addUser("Modificar");
-                      addAgent("Indicame qué datos querés cambiar.");
-                      setStep("chat_conversacional");
-                    }}
-                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                  >
-                    Modificar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      addUser("No");
-                      addAgent("Reserva cancelada. ¿En qué más puedo ayudarte?");
-                      setStep("greeting");
-                      setAnswers({});
-                      setHistorialConversacional([]);
-                      setDatosConversacional({});
-                    }}
-                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                  >
-                    No
                   </button>
                 </div>
               )}
