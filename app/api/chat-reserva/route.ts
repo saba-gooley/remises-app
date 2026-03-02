@@ -169,33 +169,44 @@ export async function POST(request: Request) {
     const rawText = textContent && "text" in textContent ? textContent.text : "";
 
     let parsed: { message: string; reservaCompleta: boolean; accion?: string | null; datos: DatosReserva };
-    let textBeforeJson = "";
-    try {
-      // Primero intentar parsear directamente (caso feliz)
-      const cleaned = rawText.replace(/```json?\s*|\s*```/g, "").trim();
-      try {
-        parsed = JSON.parse(cleaned) as typeof parsed;
-      } catch {
-        // Claude puso texto antes del JSON — buscar el primer '{' y parsear desde ahí
-        const jsonStart = cleaned.indexOf("{");
-        if (jsonStart > 0) {
-          textBeforeJson = cleaned.slice(0, jsonStart).trim();
-          parsed = JSON.parse(cleaned.slice(jsonStart)) as typeof parsed;
-          // Si el JSON tiene message vacío o genérico, usar el texto que vino antes
-          if (!parsed.message && textBeforeJson) {
-            parsed.message = textBeforeJson;
-          }
-          console.warn("[chat-reserva] JSON extraído desde posición", jsonStart, "- texto previo:", textBeforeJson.slice(0, 100));
-        } else {
-          throw new Error("no JSON found");
-        }
+
+    /** Escapa saltos de línea literales dentro de strings JSON (Claude a veces los escribe sin escapar). */
+    function sanitizeJsonStrings(text: string): string {
+      return text.replace(/"(?:[^"\\]|\\.)*"/g, (match) =>
+        match.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t"),
+      );
+    }
+
+    /** Intenta parsear con múltiples estrategias. Lanza si todas fallan. */
+    function tryParse(text: string): typeof parsed {
+      // 1. Parse directo
+      try { return JSON.parse(text) as typeof parsed; } catch { /* continuar */ }
+      // 2. Escapar saltos de línea dentro de strings
+      try { return JSON.parse(sanitizeJsonStrings(text)) as typeof parsed; } catch { /* continuar */ }
+      // 3. Buscar el primer '{' (texto libre antes del JSON)
+      const jsonStart = text.indexOf("{");
+      if (jsonStart > 0) {
+        const slice = text.slice(jsonStart);
+        try { return JSON.parse(slice) as typeof parsed; } catch { /* continuar */ }
+        try { return JSON.parse(sanitizeJsonStrings(slice)) as typeof parsed; } catch { /* continuar */ }
       }
+      throw new Error("no parseable JSON found");
+    }
+
+    try {
+      const cleaned = rawText.replace(/```json?\s*|\s*```/g, "").trim();
+      parsed = tryParse(cleaned);
     } catch {
       console.error("[chat-reserva] No se pudo parsear JSON. Raw:", rawText.slice(0, 300));
-      // Último fallback: usar el texto plano como mensaje
-      if (rawText.trim().length > 0) {
+      // Último fallback: usar el texto plano como mensaje (sin mostrar el JSON crudo)
+      const fallbackText = rawText.trim();
+      if (fallbackText.length > 0) {
+        // Si el texto empieza con '{', es JSON inválido — no lo mostramos al usuario
+        const displayText = fallbackText.startsWith("{")
+          ? "Hubo un problema al interpretar la respuesta. ¿Podés repetir tu mensaje?"
+          : fallbackText;
         return NextResponse.json({
-          message: rawText.trim(),
+          message: displayText,
           reservaCompleta: false,
           accion: null,
           datos: {},
