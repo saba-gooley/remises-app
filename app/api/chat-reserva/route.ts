@@ -169,12 +169,30 @@ export async function POST(request: Request) {
     const rawText = textContent && "text" in textContent ? textContent.text : "";
 
     let parsed: { message: string; reservaCompleta: boolean; accion?: string | null; datos: DatosReserva };
+    let textBeforeJson = "";
     try {
+      // Primero intentar parsear directamente (caso feliz)
       const cleaned = rawText.replace(/```json?\s*|\s*```/g, "").trim();
-      parsed = JSON.parse(cleaned) as typeof parsed;
+      try {
+        parsed = JSON.parse(cleaned) as typeof parsed;
+      } catch {
+        // Claude puso texto antes del JSON — buscar el primer '{' y parsear desde ahí
+        const jsonStart = cleaned.indexOf("{");
+        if (jsonStart > 0) {
+          textBeforeJson = cleaned.slice(0, jsonStart).trim();
+          parsed = JSON.parse(cleaned.slice(jsonStart)) as typeof parsed;
+          // Si el JSON tiene message vacío o genérico, usar el texto que vino antes
+          if (!parsed.message && textBeforeJson) {
+            parsed.message = textBeforeJson;
+          }
+          console.warn("[chat-reserva] JSON extraído desde posición", jsonStart, "- texto previo:", textBeforeJson.slice(0, 100));
+        } else {
+          throw new Error("no JSON found");
+        }
+      }
     } catch {
       console.error("[chat-reserva] No se pudo parsear JSON. Raw:", rawText.slice(0, 300));
-      // Fallback: si Claude respondió texto plano, usarlo como mensaje en lugar de devolver error
+      // Último fallback: usar el texto plano como mensaje
       if (rawText.trim().length > 0) {
         return NextResponse.json({
           message: rawText.trim(),
