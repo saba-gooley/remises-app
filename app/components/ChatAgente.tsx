@@ -710,82 +710,19 @@ export default function ChatAgente() {
     if (step === "chat_conversacional") {
       setInputValue("");
       setLoading(true);
-      const nuevoHistorial = [
-        ...historialConversacional,
-      ];
-      fetch("/api/chat-reserva", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          historial: nuevoHistorial,
-          mensaje: raw,
-          configCampos: config,
-        }),
-      })
-        .then((res) => res.json())
-        .then((data: { message?: string; reservaCompleta?: boolean; datos?: Partial<Answers> }) => {
-          const msgAsistente = data.message ?? "No entendí. ¿Podés repetirlo?";
-          addAgent(msgAsistente);
-          const nuevoHistorialActualizado = [
-            ...nuevoHistorial,
-            { role: "user" as const, content: raw },
-            { role: "assistant" as const, content: msgAsistente },
-          ];
-          setHistorialConversacional(nuevoHistorialActualizado);
-          if (data.datos) {
-            const merged = { ...datosConversacional, ...data.datos };
-            setDatosConversacional(merged);
-            setAnswers((prev) => ({ ...prev, ...data.datos }));
-          }
-          if (data.reservaCompleta) {
-            setStep("confirmar_conversacional");
-          }
-        })
-        .catch(() => {
-          addAgent("Hubo un error al procesar tu mensaje. ¿Podés intentarlo de nuevo?");
-        })
-        .finally(() => setLoading(false));
-      return;
-    }
-
-    if (step === "confirmar_conversacional") {
-      setInputValue("");
-      const rawLower = raw.toLowerCase().trim();
-      // Confirmación explícita: crear la reserva
-      if (
-        rawLower === "si" || rawLower === "sí" ||
-        rawLower === "confirmar" || rawLower === "confirmo" ||
-        rawLower.startsWith("sí,") || rawLower.startsWith("si,") ||
-        rawLower === "dale" || rawLower === "ok" || rawLower === "listo"
-      ) {
-        addUser(raw);
-        setAnswers((prev) => ({ ...prev, ...datosConversacional }));
-        void submitReserva();
-        return;
-      }
-      // Cancelación explícita
-      if (
-        rawLower === "no" || rawLower === "cancelar" || rawLower === "no, cancelar" ||
-        rawLower === "no quiero" || rawLower.startsWith("no,")
-      ) {
-        addUser(raw);
-        addAgent("Reserva cancelada. ¿En qué más puedo ayudarte?");
-        setStep("greeting");
-        setAnswers({});
-        setHistorialConversacional([]);
-        setDatosConversacional({});
-        return;
-      }
-      // Cualquier otra respuesta: seguir conversando con Claude
-      setLoading(true);
       const nuevoHistorial = [...historialConversacional];
       fetch("/api/chat-reserva", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ historial: nuevoHistorial, mensaje: raw, configCampos: config }),
       })
-        .then((res) => res.json())
-        .then((data: { message?: string; reservaCompleta?: boolean; datos?: Partial<Answers> }) => {
+        .then(async (res) => {
+          const data = await res.json() as { message?: string; reservaCompleta?: boolean; datos?: Partial<Answers>; error?: string; debug?: unknown };
+          if (!res.ok || data.error) {
+            console.error("[chat-reserva] error:", data);
+            addAgent(`Hubo un error al contactar al asistente (${data.error ?? res.status}). ¿Podés intentarlo de nuevo?`);
+            return;
+          }
           const msgAsistente = data.message ?? "No entendí. ¿Podés repetirlo?";
           addAgent(msgAsistente);
           setHistorialConversacional([
@@ -797,11 +734,64 @@ export default function ChatAgente() {
             setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
             setAnswers((prev) => ({ ...prev, ...data.datos }));
           }
-          if (!data.reservaCompleta) {
+          if (data.reservaCompleta) {
+            setStep("confirmar_conversacional");
+          }
+        })
+        .catch((err: unknown) => {
+          console.error("[chat-reserva] fetch error:", err);
+          addAgent("No se pudo contactar al asistente. Revisá tu conexión e intentá de nuevo.");
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    if (step === "confirmar_conversacional") {
+      setInputValue("");
+      setLoading(true);
+      const nuevoHistorial2 = [...historialConversacional];
+      fetch("/api/chat-reserva", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ historial: nuevoHistorial2, mensaje: raw, configCampos: config }),
+      })
+        .then(async (res) => {
+          const data = await res.json() as { message?: string; reservaCompleta?: boolean; accion?: string | null; datos?: Partial<Answers>; error?: string };
+          if (!res.ok || data.error) {
+            console.error("[chat-reserva] error en confirmar:", data);
+            addAgent(`Hubo un error (${data.error ?? res.status}). ¿Podés intentarlo de nuevo?`);
+            return;
+          }
+          const msgAsistente = data.message ?? "No entendí. ¿Podés repetirlo?";
+          addAgent(msgAsistente);
+          const historialActualizado = [
+            ...nuevoHistorial2,
+            { role: "user" as const, content: raw },
+            { role: "assistant" as const, content: msgAsistente },
+          ];
+          setHistorialConversacional(historialActualizado);
+          if (data.datos) {
+            setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
+            setAnswers((prev) => ({ ...prev, ...data.datos }));
+          }
+          if (data.accion === "confirmar") {
+            // Claude interpretó confirmación → crear la reserva
+            setAnswers((prev) => ({ ...prev, ...datosConversacional, ...data.datos }));
+            void submitReserva();
+          } else if (data.accion === "cancelar_solicitado") {
+            // Claude pidió confirmación de cancelación → seguir conversando
+            setStep("confirmar_conversacional");
+          } else if (data.accion === "modificar" || data.reservaCompleta) {
+            // Corrección o resumen actualizado → quedarse en confirmar
+            setStep("confirmar_conversacional");
+          } else {
             setStep("chat_conversacional");
           }
         })
-        .catch(() => addAgent("Hubo un error. ¿Podés intentarlo de nuevo?"))
+        .catch((err: unknown) => {
+          console.error("[chat-reserva] fetch error:", err);
+          addAgent("No se pudo contactar al asistente. Revisá tu conexión e intentá de nuevo.");
+        })
         .finally(() => setLoading(false));
       return;
     }

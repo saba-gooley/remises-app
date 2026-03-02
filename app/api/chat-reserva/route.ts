@@ -71,15 +71,21 @@ REGLAS DE COMPORTAMIENTO:
 8. Si no menciona ida y vuelta, con espera o recurrente, asumir que NO.
 9. Si no menciona paradas intermedias, no preguntes.
 10. Si es mensajería (menciona paquete, documentación, sobre, encomienda, mercadería), no pidas nombre del pasajero.
-11. Cuando tengas TODOS los datos obligatorios, resumís la reserva y preguntás si confirma escribiendo "sí" o "no".
+11. Cuando tengas TODOS los datos obligatorios, resumís la reserva y preguntás si confirma.
 12. Respondé de forma natural, breve y amable. No hagas listas largas. Pedí de a uno o dos campos a la vez.
 13. NUNCA mencionés botones ni opciones numeradas. Todo es conversacional: el usuario responde con texto libre.
+14. Cuando ya mostraste el resumen y el usuario responde:
+    - Si confirma (dice "sí", "confirmo", "dale", "ok", "listo", etc.): poné accion: "confirmar"
+    - Si quiere cancelar (dice claramente "cancelar", "no quiero", "dejalo", etc.): poné accion: "cancelar_solicitado" y preguntale si está seguro
+    - Si pide un cambio o corrección (dice "no, el teléfono es...", "cambiá la hora", "el destino está mal", etc.): actualizá los datos con la corrección, poné accion: "modificar", reservaCompleta: true, y mostrá el resumen actualizado pidiendo confirmación nuevamente
+    - NUNCA canceles directamente sin pedirle confirmación al usuario primero
 
 FORMATO DE TU RESPUESTA:
 Siempre respondé con un JSON con este formato exacto (sin markdown, sin texto extra):
 {
   "message": "Tu respuesta en texto natural para el usuario",
   "reservaCompleta": false,
+  "accion": null,
   "datos": {
     "tipoViaje": "pasajero" o "mensajeria" o null,
     "fechaViaje": "YYYY-MM-DD" o null,
@@ -103,7 +109,8 @@ Siempre respondé con un JSON con este formato exacto (sin markdown, sin texto e
   }
 }
 
-Cuando tengas todos los datos obligatorios, poné reservaCompleta: true y en "message" escribí el resumen completo de la reserva pidiendo confirmación.`;
+Cuando tengas todos los datos obligatorios, poné reservaCompleta: true y en "message" escribí el resumen completo de la reserva pidiendo confirmación.
+El campo "accion" solo lo usás cuando el usuario responde al resumen: "confirmar", "cancelar_solicitado", "modificar", o null si todavía estás recopilando datos.`;
 }
 
 function isEmpty(val: unknown): boolean {
@@ -176,7 +183,7 @@ export async function POST(request: Request) {
     const textContent = response.content.find((c) => c.type === "text");
     const rawText = textContent && "text" in textContent ? textContent.text : "";
 
-    let parsed: { message: string; reservaCompleta: boolean; datos: DatosReserva };
+    let parsed: { message: string; reservaCompleta: boolean; accion?: string | null; datos: DatosReserva };
     try {
       const cleaned = rawText.replace(/```json?\s*|\s*```/g, "").trim();
       parsed = JSON.parse(cleaned) as typeof parsed;
@@ -189,13 +196,15 @@ export async function POST(request: Request) {
     }
 
     const datos: DatosReserva = parsed.datos ?? {};
-    const reservaCompleta = isReservaCompleta(datos, configCampos);
+    const reservaCompleta = parsed.accion === "confirmar"
+      ? true
+      : isReservaCompleta(datos, configCampos) && parsed.reservaCompleta;
 
     return NextResponse.json({
       message: parsed.message ?? "No entendí tu respuesta. ¿Podés repetirlo?",
       reservaCompleta,
+      accion: parsed.accion ?? null,
       datos,
-      mensajeAsistente: parsed.message ?? "",
     });
   } catch (err: unknown) {
     const e = err as Error;
