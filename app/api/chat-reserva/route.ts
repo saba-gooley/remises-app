@@ -81,36 +81,21 @@ REGLAS DE COMPORTAMIENTO:
     - NUNCA canceles directamente sin pedirle confirmación al usuario primero
 
 FORMATO DE TU RESPUESTA:
-Siempre respondé con un JSON con este formato exacto (sin markdown, sin texto extra):
-{
-  "message": "Tu respuesta en texto natural para el usuario",
-  "reservaCompleta": false,
-  "accion": null,
-  "datos": {
-    "tipoViaje": "pasajero" o "mensajeria" o null,
-    "fechaViaje": "YYYY-MM-DD" o null,
-    "horaViaje": "HH:MM" o null,
-    "origenCalle": string o null,
-    "origenAltura": string o null,
-    "origenLocalidad": string o null,
-    "destinoCalle": string o null,
-    "destinoAltura": string o null,
-    "destinoLocalidad": string o null,
-    "pasajeroNombre": string o null,
-    "pasajeroTelefono": string o null,
-    "idaYVuelta": "SI" o "NO",
-    "conEspera": "SI" o "NO",
-    "esRecurrente": "SI" o "NO",
-    "centroCostos": string o null,
-    "idViaje": string o null,
-    "solicitadoPor": string o null,
-    "notas": string o null,
-    "tieneParadas": false
-  }
-}
+CRÍTICO: Respondé SIEMPRE y ÚNICAMENTE con un objeto JSON válido. NUNCA escribas texto fuera del JSON. NUNCA uses markdown. NUNCA empieces con palabras como "Listo", "Perfecto", "Claro", etc. Tu respuesta COMPLETA debe ser el JSON.
 
-Cuando tengas todos los datos obligatorios, poné reservaCompleta: true y en "message" escribí el resumen completo de la reserva pidiendo confirmación.
-El campo "accion" solo lo usás cuando el usuario responde al resumen: "confirmar", "cancelar_solicitado", "modificar", o null si todavía estás recopilando datos.`;
+Formato exacto:
+{"message":"texto para el usuario","reservaCompleta":false,"accion":null,"datos":{"tipoViaje":null,"fechaViaje":null,"horaViaje":null,"origenCalle":null,"origenAltura":null,"origenLocalidad":null,"destinoCalle":null,"destinoAltura":null,"destinoLocalidad":null,"pasajeroNombre":null,"pasajeroTelefono":null,"idaYVuelta":"NO","conEspera":"NO","esRecurrente":"NO","centroCostos":null,"idViaje":null,"solicitadoPor":null,"notas":null,"tieneParadas":false}}
+
+EJEMPLO de respuesta cuando el usuario pide una modificación (ej: "el nombre es Juan Reas"):
+{"message":"Actualicé el nombre a Juan Reas. Resumen:\n• Tipo: Pasajero\n• Fecha: 28/02/2026\n• Hora: 18:00\n• Origen: Austria 2247, CABA\n• Destino: Dr. Bernardo Houssay 1562, Pilar\n• Pasajero: Juan Reas\n• Teléfono: 87374744\n¿Confirmás que está todo bien?","reservaCompleta":true,"accion":"modificar","datos":{"tipoViaje":"pasajero","fechaViaje":"2026-02-28","horaViaje":"18:00","origenCalle":"Austria","origenAltura":"2247","origenLocalidad":"CABA","destinoCalle":"Dr. Bernardo Houssay","destinoAltura":"1562","destinoLocalidad":"Pilar","pasajeroNombre":"Juan Reas","pasajeroTelefono":"87374744","idaYVuelta":"NO","conEspera":"NO","esRecurrente":"NO","centroCostos":null,"idViaje":null,"solicitadoPor":null,"notas":null,"tieneParadas":false}}
+
+Reglas del campo "accion":
+- null: todavía recopilando datos
+- "confirmar": el usuario confirmó explícitamente la reserva
+- "modificar": el usuario pidió un cambio; actualizaste los datos y mostrás el resumen corregido
+- "cancelar_solicitado": el usuario quiere cancelar; preguntale si está seguro (nunca canceles sin confirmación)
+
+Cuando tengas todos los datos obligatorios, poné reservaCompleta: true y en "message" escribí el resumen completo de la reserva pidiendo confirmación.`;
 }
 
 function isEmpty(val: unknown): boolean {
@@ -189,6 +174,15 @@ export async function POST(request: Request) {
       parsed = JSON.parse(cleaned) as typeof parsed;
     } catch {
       console.error("[chat-reserva] No se pudo parsear JSON. Raw:", rawText.slice(0, 300));
+      // Fallback: si Claude respondió texto plano, usarlo como mensaje en lugar de devolver error
+      if (rawText.trim().length > 0) {
+        return NextResponse.json({
+          message: rawText.trim(),
+          reservaCompleta: false,
+          accion: null,
+          datos: {},
+        });
+      }
       return NextResponse.json(
         { error: "No se pudo interpretar la respuesta.", raw: rawText.slice(0, 500) },
         { status: 502 },
