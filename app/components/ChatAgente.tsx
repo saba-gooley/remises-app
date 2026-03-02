@@ -51,7 +51,7 @@ const SALUDO =
   "¿En qué puedo ayudarte?\n1) Nueva reserva\n2) Consultar mis reservas";
 
 const PREGUNTA_MODO =
-  "¿Querés dictarme los datos del viaje en un mensaje o preferís que te guíe pregunta por pregunta?\n1) Dictar\n2) Guiarme";
+  "¿Cómo querés continuar?\n1) Dictar (mensaje libre, clásico)\n2) Guiarme (pregunta a pregunta)\n3) Chatear con el agente (conversacional)";
 
 /** Orden de pasos obligatorios para detectar el primero faltante tras interpretar texto libre. */
 const ORDERED_REQUIRED_STEPS: string[] = [
@@ -297,6 +297,8 @@ export default function ChatAgente() {
   const [submitting, setSubmitting] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [missingStepsAfterDictar, setMissingStepsAfterDictar] = useState<string[] | null>(null);
+  const [historialConversacional, setHistorialConversacional] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [datosConversacional, setDatosConversacional] = useState<Partial<Answers>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const addAgent = useCallback((text: string) => {
@@ -354,8 +356,18 @@ export default function ChatAgente() {
 
   const startGuidedFlow = useCallback(() => {
     setMissingStepsAfterDictar(null);
+    setHistorialConversacional([]);
+    setDatosConversacional({});
     setStep("tipo_viaje");
     addAgent("Tipo de viaje: 1) Pasajero  2) Mensajería");
+  }, [addAgent]);
+
+  const startConversationalFlow = useCallback(() => {
+    setHistorialConversacional([]);
+    setDatosConversacional({});
+    setMissingStepsAfterDictar(null);
+    setStep("chat_conversacional");
+    addAgent("¡Perfecto! Contame los datos del viaje como quieras y yo los voy completando. Podés darme todo en un mensaje o de a poco.");
   }, [addAgent]);
 
   /** True si el valor se considera vacío (no extraído). */
@@ -683,6 +695,76 @@ export default function ChatAgente() {
         );
         return;
       }
+      if (
+        raw === "3" ||
+        raw.toLowerCase().includes("chat") ||
+        raw.toLowerCase().includes("conversa") ||
+        raw.toLowerCase().includes("agente")
+      ) {
+        startConversationalFlow();
+        return;
+      }
+      return;
+    }
+
+    if (step === "chat_conversacional") {
+      setInputValue("");
+      setLoading(true);
+      const nuevoHistorial = [
+        ...historialConversacional,
+      ];
+      fetch("/api/chat-reserva", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          historial: nuevoHistorial,
+          mensaje: raw,
+          configCampos: config,
+        }),
+      })
+        .then((res) => res.json())
+        .then((data: { message?: string; reservaCompleta?: boolean; datos?: Partial<Answers> }) => {
+          const msgAsistente = data.message ?? "No entendí. ¿Podés repetirlo?";
+          addAgent(msgAsistente);
+          const nuevoHistorialActualizado = [
+            ...nuevoHistorial,
+            { role: "user" as const, content: raw },
+            { role: "assistant" as const, content: msgAsistente },
+          ];
+          setHistorialConversacional(nuevoHistorialActualizado);
+          if (data.datos) {
+            const merged = { ...datosConversacional, ...data.datos };
+            setDatosConversacional(merged);
+            setAnswers((prev) => ({ ...prev, ...data.datos }));
+          }
+          if (data.reservaCompleta) {
+            setStep("confirmar_conversacional");
+          }
+        })
+        .catch(() => {
+          addAgent("Hubo un error al procesar tu mensaje. ¿Podés intentarlo de nuevo?");
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    if (step === "confirmar_conversacional") {
+      setInputValue("");
+      if (raw.toLowerCase().includes("modif")) {
+        addAgent("Indicame qué datos querés cambiar.");
+        setStep("chat_conversacional");
+        return;
+      }
+      if (value.toUpperCase().startsWith("S")) {
+        setAnswers((prev) => ({ ...prev, ...datosConversacional }));
+        void submitReserva();
+      } else {
+        addAgent("Reserva cancelada. ¿En qué más puedo ayudarte?");
+        setStep("greeting");
+        setAnswers({});
+        setHistorialConversacional([]);
+        setDatosConversacional({});
+      }
       return;
     }
 
@@ -952,6 +1034,7 @@ export default function ChatAgente() {
     getFirstMissingStep,
     loadConfigAndStart,
     startGuidedFlow,
+    startConversationalFlow,
     submitReserva,
     router,
   ]);
@@ -959,6 +1042,7 @@ export default function ChatAgente() {
   const showChoiceButtons = step === "greeting";
   const showModoButtons = step === "modo_reserva";
   const showConfirmButtons = step === "confirmar";
+  const showConfirmConversacionalButtons = step === "confirmar_conversacional";
 
   return (
     <>
@@ -1056,7 +1140,7 @@ export default function ChatAgente() {
                 </div>
               )}
               {showModoButtons && (
-                <div className="mb-2 flex gap-2">
+                <div className="mb-2 flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -1079,6 +1163,57 @@ export default function ChatAgente() {
                     className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
                   >
                     2) Guiarme
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addUser("Chatear con el agente");
+                      startConversationalFlow();
+                    }}
+                    className="rounded-md border border-zinc-500 bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-200"
+                  >
+                    3) Chatear
+                  </button>
+                </div>
+              )}
+              {showConfirmConversacionalButtons && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => {
+                      addUser("Sí, confirmar");
+                      setAnswers((prev) => ({ ...prev, ...datosConversacional }));
+                      void submitReserva();
+                    }}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    Sí, confirmar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addUser("Modificar");
+                      addAgent("Indicame qué datos querés cambiar.");
+                      setStep("chat_conversacional");
+                    }}
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Modificar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addUser("No");
+                      addAgent("Reserva cancelada. ¿En qué más puedo ayudarte?");
+                      setStep("greeting");
+                      setAnswers({});
+                      setHistorialConversacional([]);
+                      setDatosConversacional({});
+                    }}
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    No
                   </button>
                 </div>
               )}
@@ -1121,7 +1256,7 @@ export default function ChatAgente() {
                   </button>
                 </div>
               )}
-              {!showChoiceButtons && !showModoButtons && !showConfirmButtons && (
+              {!showChoiceButtons && !showModoButtons && !showConfirmButtons && !showConfirmConversacionalButtons && (
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
