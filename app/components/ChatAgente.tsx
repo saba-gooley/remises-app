@@ -750,21 +750,33 @@ export default function ChatAgente() {
 
     if (step === "confirmar_conversacional") {
       setInputValue("");
-      if (raw.toLowerCase().includes("modif")) {
-        addAgent("Indicame qué datos querés cambiar.");
-        setStep("chat_conversacional");
-        return;
-      }
-      if (value.toUpperCase().startsWith("S")) {
-        setAnswers((prev) => ({ ...prev, ...datosConversacional }));
-        void submitReserva();
-      } else {
-        addAgent("Reserva cancelada. ¿En qué más puedo ayudarte?");
-        setStep("greeting");
-        setAnswers({});
-        setHistorialConversacional([]);
-        setDatosConversacional({});
-      }
+      // Si el usuario escribe algo (respuesta a una pregunta de Claude), seguir conversando
+      setLoading(true);
+      const nuevoHistorial = [...historialConversacional];
+      fetch("/api/chat-reserva", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ historial: nuevoHistorial, mensaje: raw, configCampos: config }),
+      })
+        .then((res) => res.json())
+        .then((data: { message?: string; reservaCompleta?: boolean; datos?: Partial<Answers> }) => {
+          const msgAsistente = data.message ?? "No entendí. ¿Podés repetirlo?";
+          addAgent(msgAsistente);
+          setHistorialConversacional([
+            ...nuevoHistorial,
+            { role: "user" as const, content: raw },
+            { role: "assistant" as const, content: msgAsistente },
+          ]);
+          if (data.datos) {
+            setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
+            setAnswers((prev) => ({ ...prev, ...data.datos }));
+          }
+          if (!data.reservaCompleta) {
+            setStep("chat_conversacional");
+          }
+        })
+        .catch(() => addAgent("Hubo un error. ¿Podés intentarlo de nuevo?"))
+        .finally(() => setLoading(false));
       return;
     }
 
@@ -1256,7 +1268,7 @@ export default function ChatAgente() {
                   </button>
                 </div>
               )}
-              {!showChoiceButtons && !showModoButtons && !showConfirmButtons && !showConfirmConversacionalButtons && (
+              {!showChoiceButtons && !showModoButtons && !showConfirmButtons && (
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();

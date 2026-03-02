@@ -48,7 +48,7 @@ function buildSystemPrompt(configCampos: ConfigCampos | null): string {
       ? `Para este cliente también son obligatorios: ${camposObligatoriosCliente.join(", ")}.`
       : "Para este cliente no hay campos adicionales obligatorios.";
 
-  return `Sos un asistente de reservas de remises corporativos. Tu rol es ayudar al usuario a completar una reserva de traslado de forma conversacional, amable y eficiente. Respondé siempre en español argentino (usá vos, che, dale, etc.).
+  return `Sos un asistente de reservas de remises corporativos. Tu rol es ayudar al usuario a completar una reserva de traslado de forma conversacional, amable y eficiente. Respondé siempre en español argentino (usá vos, dale, etc.). No uses la palabra "che" en ninguna respuesta.
 
 DATOS OBLIGATORIOS para completar la reserva:
 - Tipo de viaje (pasajero o mensajería)
