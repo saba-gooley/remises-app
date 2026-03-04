@@ -571,17 +571,15 @@ export default function ChatAgente() {
     return t;
   }
 
-  const submitReserva = useCallback(async () => {
+  const submitReserva = useCallback(async (answersOverride?: Answers) => {
     if (!session?.user) {
       console.log("[ChatAgente] submitReserva: no hay sesión", { session });
       return;
     }
-    console.log("[ChatAgente] Sesión para reserva:", {
-      usuario_id: session.user.id,
-      mail_solicitante: session.user.email,
-    });
     setSubmitting(true);
-    const a = answers;
+    const a = answersOverride ?? answers;
+    console.log("[ChatAgente] submitReserva llamado. Fuente:", answersOverride ? "override (conversacional)" : "state (guiado)");
+    console.log("[ChatAgente] answers a usar:", a);
 
     // Obtener cliente_id del usuario logueado
     let clienteId: string | null = null;
@@ -628,11 +626,12 @@ export default function ChatAgente() {
       a.idaYVuelta === "SI" && a.conEspera === "NO"
         ? [baseReserva, baseReserva]
         : [baseReserva];
-    console.log("[ChatAgente] Objeto a insertar en Supabase (reservas):", reservasAInsertar);
+    console.log("[ChatAgente] Payload a insertar en Supabase:", JSON.stringify(reservasAInsertar, null, 2));
     const { data: reservasInsertadas, error: reservasError } = await supabase
       .from("reservas")
       .insert(reservasAInsertar)
       .select("id");
+    console.log("[ChatAgente] Resultado insert reservas:", { reservasInsertadas, reservasError });
     if (reservasError) {
       console.error("[ChatAgente] Error al insertar reservas:", reservasError);
       addAgent("Hubo un problema al crear la reserva. ¿Querés intentarlo de nuevo?");
@@ -788,8 +787,11 @@ export default function ChatAgente() {
           }
           if (data.accion === "confirmar") {
             // Claude interpretó confirmación → crear la reserva
-            setAnswers((prev) => ({ ...prev, ...datosConversacional, ...data.datos }));
-            void submitReserva();
+            // Mergeamos aquí y pasamos directo para evitar race condition con setAnswers
+            const mergedAnswers: Answers = { ...answers, ...datosConversacional, ...(data.datos ?? {}) };
+            console.log("[ChatAgente] accion=confirmar, mergedAnswers:", mergedAnswers);
+            setAnswers(mergedAnswers);
+            void submitReserva(mergedAnswers);
           } else if (data.accion === "cancelar_solicitado") {
             // Claude pidió confirmación de cancelación → seguir conversando
             setStep("confirmar_conversacional");
