@@ -48,7 +48,7 @@ type Answers = {
 };
 
 const SALUDO =
-  "¿En qué puedo ayudarte?\n1) Nueva reserva\n2) Consultar mis reservas";
+  "¿En qué puedo ayudarte?\n1) Nueva reserva\n2) Consultar mis reservas\n3) Consultar disponibilidad";
 
 // Opciones de modo ocultas — reservadas para uso futuro si el chat conversacional falla
 const PREGUNTA_MODO =
@@ -300,6 +300,7 @@ export default function ChatAgente() {
   const [missingStepsAfterDictar, setMissingStepsAfterDictar] = useState<string[] | null>(null);
   const [historialConversacional, setHistorialConversacional] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [datosConversacional, setDatosConversacional] = useState<Partial<Answers>>({});
+  const [esConsulta, setEsConsulta] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const addAgent = useCallback((text: string) => {
@@ -355,6 +356,7 @@ export default function ChatAgente() {
     setHistorialConversacional([]);
     setDatosConversacional({});
     setMissingStepsAfterDictar(null);
+    setEsConsulta(false);
     setStep("chat_conversacional");
     addAgent("¡Perfecto! Contame los datos del viaje como quieras y yo los voy completando. Podés darme todo en un mensaje o de a poco.");
   }, [addAgent]);
@@ -371,8 +373,35 @@ export default function ChatAgente() {
     setHistorialConversacional([]);
     setDatosConversacional({});
     setMissingStepsAfterDictar(null);
+    setEsConsulta(false);
     setStep("chat_conversacional");
     addAgent("¡Perfecto! Contame los datos del viaje como quieras y yo los voy completando. Podés darme todo en un mensaje o de a poco.");
+  }, [addAgent]);
+
+  const startConsultaFlow = useCallback(async () => {
+    setLoading(true);
+    const { data: { session: s } } = await supabase.auth.getSession();
+    setSession(s ?? null);
+    if (!s?.user?.email) {
+      addAgent("Necesitás iniciar sesión para consultar disponibilidad.");
+      setStep("greeting");
+      setLoading(false);
+      return;
+    }
+    const { data: usuario } = await supabase
+      .from("usuarios").select("cliente_id").eq("email", s.user.email).maybeSingle();
+    if (usuario?.cliente_id) {
+      const { data: cliente } = await supabase
+        .from("clientes").select("configuracion_campos").eq("id", usuario.cliente_id).maybeSingle();
+      if (cliente?.configuracion_campos) setConfig(cliente.configuracion_campos as ConfigCampos);
+    }
+    setLoading(false);
+    setHistorialConversacional([]);
+    setDatosConversacional({});
+    setMissingStepsAfterDictar(null);
+    setEsConsulta(true);
+    setStep("chat_conversacional");
+    addAgent("¡Perfecto! Contame los datos del viaje para la consulta de disponibilidad. Podés darme todo en un mensaje o de a poco.");
   }, [addAgent]);
 
   /** True si el valor se considera vacío (no extraído). */
@@ -673,19 +702,81 @@ export default function ChatAgente() {
     setSubmitting(false);
   }, [session, answers, addAgent]);
 
+  const submitConsulta = useCallback(async (answersOverride?: Answers) => {
+    if (!session?.user) return;
+    setSubmitting(true);
+    const a = answersOverride ?? answers;
+
+    let clienteId: string | null = null;
+    const { data: usuarioData } = await supabase
+      .from("usuarios").select("cliente_id").eq("id", session.user.id).maybeSingle();
+    clienteId = usuarioData?.cliente_id ?? null;
+
+    const payload = {
+      usuario_id: session.user.id,
+      cliente_id: clienteId,
+      tipo_viaje: a.tipoViaje ?? "pasajero",
+      fecha_viaje: a.fechaViaje ?? "",
+      hora_viaje: a.horaViaje ?? "",
+      origen_calle: a.origenCalle ?? "",
+      origen_altura: a.origenAltura ?? "",
+      origen_localidad: a.origenLocalidad ?? "",
+      destino_calle: a.destinoCalle ?? "",
+      destino_altura: a.destinoAltura ?? "",
+      destino_localidad: a.destinoLocalidad ?? "",
+      pasajero_nombre: a.pasajeroNombre ?? "",
+      pasajero_cantidad: 1,
+      pasajero_telefono: a.pasajeroTelefono ?? "",
+      con_espera: a.conEspera === "SI",
+      ida_y_vuelta: a.idaYVuelta === "SI",
+      es_recurrente: a.esRecurrente === "SI",
+      dias_recurrente: a.diasRecurrente?.length ? a.diasRecurrente : null,
+      hora_recurrente: a.horaRecurrente ?? null,
+      fecha_inicio_recurrente: a.fechaInicioRecurrente ?? null,
+      fecha_fin_recurrente: a.fechaFinRecurrente ?? null,
+      centro_costos: a.centroCostos ?? "",
+      solicitado_por: a.solicitadoPor ?? "",
+      mail_solicitante: session.user.email ?? null,
+      notas: a.notas ?? null,
+      estado: "pendiente",
+      creado_en: new Date().toISOString(),
+    };
+
+    const { error: consultaError } = await supabase.from("consultas").insert(payload);
+    if (consultaError) {
+      console.error("[ChatAgente] Error al insertar consulta:", consultaError);
+      addAgent("Hubo un problema al registrar la consulta. ¿Querés intentarlo de nuevo?");
+      setSubmitting(false);
+      return;
+    }
+    addAgent("Tu consulta fue registrada. Te notificaremos cuando tengamos una respuesta.");
+    setStep("greeting");
+    setAnswers({});
+    setParadaIndex(0);
+    setMissingStepsAfterDictar(null);
+    setEsConsulta(false);
+    setSubmitting(false);
+  }, [session, answers, addAgent]);
+
   const handleSend = useCallback(() => {
     const raw = inputValue.trim();
     if (!raw && step !== "notas") return;
     const value = raw || "omitir";
-    addUser(step === "greeting" ? (raw === "2" ? "Consultar mis reservas" : "Nueva reserva") : value);
+    const greetingLabel = raw === "2" ? "Consultar mis reservas" : raw === "3" ? "Consultar disponibilidad" : "Nueva reserva";
+    addUser(step === "greeting" ? greetingLabel : value);
 
     if (step === "greeting") {
-      if (raw === "2" || raw.toLowerCase().includes("consultar")) {
+      if (raw === "2" || (raw.toLowerCase().includes("consultar") && raw.toLowerCase().includes("reserva"))) {
         router.push("/mis-reservas");
         setOpen(false);
         return;
       }
-      if (raw === "1" || raw.toLowerCase().includes("nueva")) {
+      if (raw === "3" || raw.toLowerCase().includes("disponibilidad")) {
+        setInputValue("");
+        void startConsultaFlow();
+        return;
+      }
+      if (raw === "1" || raw.toLowerCase().includes("nueva reserva") || raw.toLowerCase().includes("reserva")) {
         setInputValue("");
         void loadConfigAndStart();
         return;
@@ -804,7 +895,7 @@ export default function ChatAgente() {
               }
             }
 
-            // Fecha válida → mostrar confirmación de Claude y crear reserva
+            // Fecha válida → mostrar confirmación de Claude y crear reserva/consulta
             addAgent(msgAsistente);
             setHistorialConversacional([
               ...nuevoHistorial2,
@@ -815,7 +906,11 @@ export default function ChatAgente() {
               setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
             }
             setAnswers(mergedAnswers);
-            void submitReserva(mergedAnswers);
+            if (esConsulta) {
+              void submitConsulta(mergedAnswers);
+            } else {
+              void submitReserva(mergedAnswers);
+            }
           } else {
             // Para todos los otros casos: mostrar el mensaje de Claude y actualizar historial/datos
             addAgent(msgAsistente);
@@ -1115,7 +1210,10 @@ export default function ChatAgente() {
     loadConfigAndStart,
     startGuidedFlow,
     startConversationalFlow,
+    startConsultaFlow,
     submitReserva,
+    submitConsulta,
+    esConsulta,
     router,
   ]);
 
@@ -1193,7 +1291,7 @@ export default function ChatAgente() {
             </div>
             <div className="border-t border-zinc-200 p-3">
               {showChoiceButtons && (
-                <div className="mb-2 flex gap-2">
+                <div className="mb-2 flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -1214,7 +1312,18 @@ export default function ChatAgente() {
                     }}
                     className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
                   >
-                    2) Consultar mis reservas
+                    2) Mis reservas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addUser("Consultar disponibilidad");
+                      setInputValue("");
+                      void startConsultaFlow();
+                    }}
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    3) Disponibilidad
                   </button>
                 </div>
               )}
@@ -1263,7 +1372,8 @@ export default function ChatAgente() {
                     onClick={() => {
                       addUser("Sí");
                       setInputValue("");
-                      void submitReserva();
+                      if (esConsulta) void submitConsulta();
+                      else void submitReserva();
                     }}
                     className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                   >

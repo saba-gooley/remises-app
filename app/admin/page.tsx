@@ -56,6 +56,37 @@ type Usuario = {
   cliente_id: string | null;
 };
 
+type Consulta = {
+  id: number;
+  estado: "pendiente" | "disponible" | "no_disponible" | "convertida" | null;
+  fecha_viaje: string | null;
+  hora_viaje: string | null;
+  origen_calle: string | null;
+  origen_altura: string | null;
+  origen_localidad: string | null;
+  destino_calle: string | null;
+  destino_altura: string | null;
+  destino_localidad: string | null;
+  pasajero_nombre: string | null;
+  notas: string | null;
+  mail_solicitante: string | null;
+  respuesta_operador: string | null;
+  creado_en: string | null;
+  cliente_id: string | null;
+  tipo_viaje: string | null;
+  con_espera: boolean | null;
+  ida_y_vuelta: boolean | null;
+  es_recurrente: boolean | null;
+  dias_recurrente: string[] | null;
+  hora_recurrente: string | null;
+  fecha_inicio_recurrente: string | null;
+  fecha_fin_recurrente: string | null;
+  centro_costos: string | null;
+  solicitado_por: string | null;
+  pasajero_cantidad: number | null;
+  pasajero_telefono: string | null;
+};
+
 function fmt(d: string | null, withTime = false) {
   if (!d) return "-";
   return new Date(d).toLocaleString("es-AR", withTime
@@ -74,12 +105,19 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"reservas" | "clientes">("reservas");
+  const [activeTab, setActiveTab] = useState<"reservas" | "consultas" | "clientes">("reservas");
 
-  // Modal detalle
+  // Modal detalle reserva
   const [reservaSeleccionada, setReservaSeleccionada] = useState<Reserva | null>(null);
   const [paradasModal, setParadasModal] = useState<Parada[]>([]);
   const [loadingParadas, setLoadingParadas] = useState(false);
+
+  // Consultas
+  const [consultas, setConsultas] = useState<Consulta[]>([]);
+  const [loadingConsultas, setLoadingConsultas] = useState(false);
+  const [consultaSeleccionada, setConsultaSeleccionada] = useState<Consulta | null>(null);
+  const [respuestaTexto, setRespuestaTexto] = useState<Record<number, string>>({});
+  const [actionLoadingConsultaId, setActionLoadingConsultaId] = useState<number | null>(null);
 
   // Clientes y usuarios
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -130,6 +168,17 @@ export default function AdminPage() {
     setLoading(false);
   };
 
+  const fetchConsultas = async () => {
+    setLoadingConsultas(true);
+    const { data, error: err } = await supabase
+      .from("consultas")
+      .select("*")
+      .eq("estado", "pendiente")
+      .order("creado_en", { ascending: true });
+    if (!err) setConsultas((data ?? []) as Consulta[]);
+    setLoadingConsultas(false);
+  };
+
   const fetchClientesYUsuarios = async () => {
     setClientesLoading(true);
     setClientesError(null);
@@ -155,6 +204,7 @@ export default function AdminPage() {
         .select("es_operador").eq("email", session.user.email).maybeSingle();
       if (!usuario?.es_operador) { router.replace("/login"); return; }
       await fetchReservas();
+      await fetchConsultas();
       await fetchClientesYUsuarios();
     };
     void checkAuthAndFetch();
@@ -249,6 +299,19 @@ export default function AdminPage() {
     setSavingAsignacionId(null);
   };
 
+  const handleResponderConsulta = async (id: number, nuevoEstado: "disponible" | "no_disponible") => {
+    setActionLoadingConsultaId(id);
+    const respuesta = respuestaTexto[id] ?? null;
+    const { error: updateError } = await supabase.from("consultas")
+      .update({ estado: nuevoEstado, respuesta_operador: respuesta })
+      .eq("id", id);
+    if (!updateError) {
+      setConsultas((prev) => prev.filter((c) => c.id !== id));
+      if (consultaSeleccionada?.id === id) setConsultaSeleccionada(null);
+    }
+    setActionLoadingConsultaId(null);
+  };
+
   const clienteNombre = (clienteId: string | null) =>
     clientes.find((c) => c.id === clienteId)?.nombre ?? "-";
 
@@ -267,23 +330,163 @@ export default function AdminPage() {
         </div>
 
         <div className="mb-4 flex gap-2 border-b border-zinc-200">
-          {(["reservas", "clientes"] as const).map((tab) => (
+          {([
+            { key: "reservas", label: "Reservas a confirmar" },
+            { key: "consultas", label: "Consultas pendientes" },
+            { key: "clientes", label: "Gestión de Clientes" },
+          ] as const).map(({ key, label }) => (
             <button
-              key={tab}
+              key={key}
               type="button"
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setActiveTab(key)}
               className={`rounded-t-md px-4 py-2 text-xs font-medium ${
-                activeTab === tab
+                activeTab === key
                   ? "border border-b-white border-zinc-200 bg-white text-zinc-900"
                   : "text-zinc-600 hover:bg-zinc-50"
               }`}
             >
-              {tab === "reservas" ? "Reservas a confirmar" : "Gestión de Clientes"}
+              {label}
             </button>
           ))}
         </div>
 
-        {activeTab === "reservas" ? (
+        {activeTab === "consultas" ? (
+          <>
+            <div className="mb-3 flex items-center justify-between gap-4">
+              <p className="text-sm text-zinc-600">Consultas de disponibilidad pendientes de respuesta.</p>
+              <button type="button" onClick={() => void fetchConsultas()}
+                className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                Actualizar
+              </button>
+            </div>
+
+            {loadingConsultas ? (
+              <p className="text-sm text-zinc-600">Cargando consultas...</p>
+            ) : consultas.length === 0 ? (
+              <p className="text-sm text-zinc-600">No hay consultas pendientes.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500">
+                    <tr>
+                      <th className="px-3 py-2">Fecha solicitud</th>
+                      <th className="px-3 py-2">Cliente</th>
+                      <th className="px-3 py-2">Fecha viaje</th>
+                      <th className="px-3 py-2">Hora</th>
+                      <th className="px-3 py-2">Origen</th>
+                      <th className="px-3 py-2">Destino</th>
+                      <th className="px-3 py-2">Pasajero</th>
+                      <th className="px-3 py-2">Mail solicitante</th>
+                      <th className="px-3 py-2">Respuesta</th>
+                      <th className="px-3 py-2">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consultas.map((c) => (
+                      <tr
+                        key={c.id}
+                        onClick={() => setConsultaSeleccionada(consultaSeleccionada?.id === c.id ? null : c)}
+                        className={`cursor-pointer border-b border-zinc-100 hover:bg-blue-50 ${consultaSeleccionada?.id === c.id ? "bg-blue-50" : ""}`}
+                      >
+                        <td className="px-3 py-2 text-xs text-zinc-600">{fmt(c.creado_en, true)}</td>
+                        <td className="px-3 py-2 text-xs font-medium text-zinc-800">{clienteNombre(c.cliente_id)}</td>
+                        <td className="px-3 py-2 text-xs text-zinc-700">{fmt(c.fecha_viaje)}</td>
+                        <td className="px-3 py-2 text-xs text-zinc-700">{c.hora_viaje ?? "-"}</td>
+                        <td className="px-3 py-2 text-xs text-zinc-700">{dir(c.origen_calle, c.origen_altura, c.origen_localidad)}</td>
+                        <td className="px-3 py-2 text-xs text-zinc-700">{dir(c.destino_calle, c.destino_altura, c.destino_localidad)}</td>
+                        <td className="px-3 py-2 text-xs text-zinc-700">{c.pasajero_nombre ?? "-"}</td>
+                        <td className="px-3 py-2 text-xs text-zinc-600">{c.mail_solicitante ?? "-"}</td>
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            placeholder="Respuesta opcional"
+                            value={respuestaTexto[c.id] ?? ""}
+                            onChange={(e) => setRespuestaTexto((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                            className="w-40 rounded-md border border-zinc-300 px-2 py-1 text-xs shadow-sm focus:border-zinc-900 focus:outline-none"
+                          />
+                        </td>
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" disabled={actionLoadingConsultaId === c.id}
+                              onClick={() => void handleResponderConsulta(c.id, "disponible")}
+                              className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+                              Hay disponibilidad
+                            </button>
+                            <button type="button" disabled={actionLoadingConsultaId === c.id}
+                              onClick={() => void handleResponderConsulta(c.id, "no_disponible")}
+                              className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
+                              No hay disponibilidad
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Detalle consulta */}
+            {consultaSeleccionada && (
+              <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
+                <div className="mb-4 flex items-start justify-between">
+                  <h2 className="text-base font-semibold text-zinc-900">Detalle consulta #{consultaSeleccionada.id}</h2>
+                  <button type="button" onClick={() => setConsultaSeleccionada(null)}
+                    className="text-xs text-zinc-500 hover:text-zinc-800 underline">Cerrar</button>
+                </div>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs md:grid-cols-3 lg:grid-cols-4">
+                  {([
+                    ["Cliente", clienteNombre(consultaSeleccionada.cliente_id)],
+                    ["Fecha solicitud", fmt(consultaSeleccionada.creado_en, true)],
+                    ["Tipo de viaje", consultaSeleccionada.tipo_viaje],
+                    ["Fecha viaje", fmt(consultaSeleccionada.fecha_viaje)],
+                    ["Hora", consultaSeleccionada.hora_viaje],
+                    ["Origen", dir(consultaSeleccionada.origen_calle, consultaSeleccionada.origen_altura, consultaSeleccionada.origen_localidad)],
+                    ["Destino", dir(consultaSeleccionada.destino_calle, consultaSeleccionada.destino_altura, consultaSeleccionada.destino_localidad)],
+                    ["Pasajero", consultaSeleccionada.pasajero_nombre],
+                    ["Teléfono", consultaSeleccionada.pasajero_telefono],
+                    ["Cantidad pasajeros", consultaSeleccionada.pasajero_cantidad?.toString()],
+                    ["Ida y vuelta", consultaSeleccionada.ida_y_vuelta ? "Sí" : "No"],
+                    ["Con espera", consultaSeleccionada.con_espera ? "Sí" : "No"],
+                    ["Recurrente", consultaSeleccionada.es_recurrente ? "Sí" : "No"],
+                    ["Días recurrente", consultaSeleccionada.dias_recurrente?.join(", ")],
+                    ["Hora recurrente", consultaSeleccionada.hora_recurrente],
+                    ["Inicio recurrente", fmt(consultaSeleccionada.fecha_inicio_recurrente)],
+                    ["Fin recurrente", fmt(consultaSeleccionada.fecha_fin_recurrente)],
+                    ["Centro de costos", consultaSeleccionada.centro_costos],
+                    ["Solicitado por", consultaSeleccionada.solicitado_por],
+                    ["Mail solicitante", consultaSeleccionada.mail_solicitante],
+                    ["Notas", consultaSeleccionada.notas],
+                  ] as [string, string | null | undefined][]).map(([label, value]) => (
+                    <div key={label}>
+                      <span className="font-medium text-zinc-500">{label}: </span>
+                      <span className="text-zinc-800">{value ?? "-"}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="text"
+                    placeholder="Respuesta para el solicitante (opcional)"
+                    value={respuestaTexto[consultaSeleccionada.id] ?? ""}
+                    onChange={(e) => setRespuestaTexto((prev) => ({ ...prev, [consultaSeleccionada.id]: e.target.value }))}
+                    className="w-full rounded-md border border-zinc-300 px-3 py-2 text-xs shadow-sm focus:border-zinc-900 focus:outline-none sm:w-72"
+                  />
+                  <button type="button" disabled={actionLoadingConsultaId === consultaSeleccionada.id}
+                    onClick={() => void handleResponderConsulta(consultaSeleccionada.id, "disponible")}
+                    className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+                    Hay disponibilidad
+                  </button>
+                  <button type="button" disabled={actionLoadingConsultaId === consultaSeleccionada.id}
+                    onClick={() => void handleResponderConsulta(consultaSeleccionada.id, "no_disponible")}
+                    className="rounded-md bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
+                    No hay disponibilidad
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : activeTab === "reservas" ? (
           <>
             <div className="mb-3 flex items-center justify-between gap-4">
               <p className="text-sm text-zinc-600">Reservas pendientes de confirmación. Hacé click en una fila para ver el detalle.</p>
@@ -445,6 +648,7 @@ export default function AdminPage() {
           </>
         ) : (
           <>
+            {/* clientes tab */}
             {clientesError && <p className="mb-3 text-sm text-red-600" role="alert">{clientesError}</p>}
 
             <div className="grid gap-6 md:grid-cols-2">

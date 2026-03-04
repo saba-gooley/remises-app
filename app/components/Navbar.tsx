@@ -71,6 +71,12 @@ export default function Navbar() {
             <Link href="/mis-reservas" className={linkClass("/mis-reservas")}>
               Mis Reservas
             </Link>
+            <Link href="/consultas/nueva" className={linkClass("/consultas/nueva")}>
+              Nueva Consulta
+            </Link>
+            <Link href="/mis-consultas" className={linkClass("/mis-consultas")}>
+              Mis Consultas
+            </Link>
             {isOperador && (
               <Link href="/admin" className={linkClass("/admin")}>
                 Panel Admin
