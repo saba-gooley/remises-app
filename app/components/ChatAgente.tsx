@@ -779,46 +779,63 @@ export default function ChatAgente() {
             return;
           }
           const msgAsistente = data.message ?? "No entendí. ¿Podés repetirlo?";
-          addAgent(msgAsistente);
-          const historialActualizado = [
-            ...nuevoHistorial2,
-            { role: "user" as const, content: raw },
-            { role: "assistant" as const, content: msgAsistente },
-          ];
-          setHistorialConversacional(historialActualizado);
-          if (data.datos) {
-            setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
-            setAnswers((prev) => ({ ...prev, ...data.datos }));
-          }
+
           if (data.accion === "confirmar") {
-            // Claude interpretó confirmación → validar y crear la reserva
+            // Claude quiere confirmar → validar ANTES de mostrar su mensaje
             const mergedAnswers: Answers = { ...answers, ...datosConversacional, ...(data.datos ?? {}) };
             console.log("[ChatAgente] accion=confirmar, mergedAnswers:", mergedAnswers);
 
-            // Validar que la fecha no sea anterior a hoy
             if (mergedAnswers.fechaViaje) {
               const fechaViaje = new Date(mergedAnswers.fechaViaje + "T00:00:00");
               const hoy = new Date();
               hoy.setHours(0, 0, 0, 0);
               if (fechaViaje < hoy) {
+                // NO mostramos el mensaje de Claude — mostramos el error directamente
                 addAgent(
                   `La fecha del viaje (${mergedAnswers.fechaViaje.split("-").reverse().join("/")}) no puede ser anterior a hoy. ¿Querés indicarme una fecha correcta?`,
                 );
+                setHistorialConversacional([
+                  ...nuevoHistorial2,
+                  { role: "user" as const, content: raw },
+                  { role: "assistant" as const, content: `La fecha ${mergedAnswers.fechaViaje} es anterior a hoy. Pedí fecha correcta.` },
+                ]);
                 setStep("chat_conversacional");
                 return;
               }
             }
 
+            // Fecha válida → mostrar confirmación de Claude y crear reserva
+            addAgent(msgAsistente);
+            setHistorialConversacional([
+              ...nuevoHistorial2,
+              { role: "user" as const, content: raw },
+              { role: "assistant" as const, content: msgAsistente },
+            ]);
+            if (data.datos) {
+              setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
+            }
             setAnswers(mergedAnswers);
             void submitReserva(mergedAnswers);
-          } else if (data.accion === "cancelar_solicitado") {
-            // Claude pidió confirmación de cancelación → seguir conversando
-            setStep("confirmar_conversacional");
-          } else if (data.accion === "modificar" || data.reservaCompleta) {
-            // Corrección o resumen actualizado → quedarse en confirmar
-            setStep("confirmar_conversacional");
           } else {
-            setStep("chat_conversacional");
+            // Para todos los otros casos: mostrar el mensaje de Claude y actualizar historial/datos
+            addAgent(msgAsistente);
+            const historialActualizado = [
+              ...nuevoHistorial2,
+              { role: "user" as const, content: raw },
+              { role: "assistant" as const, content: msgAsistente },
+            ];
+            setHistorialConversacional(historialActualizado);
+            if (data.datos) {
+              setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
+              setAnswers((prev) => ({ ...prev, ...data.datos }));
+            }
+            if (data.accion === "cancelar_solicitado") {
+              setStep("confirmar_conversacional");
+            } else if (data.accion === "modificar" || data.reservaCompleta) {
+              setStep("confirmar_conversacional");
+            } else {
+              setStep("chat_conversacional");
+            }
           }
         })
         .catch((err: unknown) => {
