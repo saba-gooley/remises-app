@@ -19,7 +19,8 @@ type Consulta = {
   notas: string | null;
   respuesta_operador: string | null;
   creado_en: string | null;
-  // todos los campos para convertir en reserva
+  // campos para convertir en reserva
+  id_viaje: string | null;
   tipo_viaje: string | null;
   con_espera: boolean | null;
   ida_y_vuelta: boolean | null;
@@ -97,6 +98,7 @@ export default function MisConsultasPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const reservaPayload = {
+        id_viaje: consulta.id_viaje,
         usuario_id: consulta.usuario_id,
         cliente_id: consulta.cliente_id,
         tipo_viaje: consulta.tipo_viaje,

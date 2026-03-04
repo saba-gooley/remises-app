@@ -73,6 +73,7 @@ type Consulta = {
   respuesta_operador: string | null;
   creado_en: string | null;
   cliente_id: string | null;
+  id_viaje: string | null;
   tipo_viaje: string | null;
   con_espera: boolean | null;
   ida_y_vuelta: boolean | null;
@@ -446,6 +447,7 @@ export default function AdminPage() {
                     ["Pasajero", consultaSeleccionada.pasajero_nombre],
                     ["Teléfono", consultaSeleccionada.pasajero_telefono],
                     ["Cantidad pasajeros", consultaSeleccionada.pasajero_cantidad?.toString()],
+                    ["ID Viaje", consultaSeleccionada.id_viaje],
                     ["Ida y vuelta", consultaSeleccionada.ida_y_vuelta ? "Sí" : "No"],
                     ["Con espera", consultaSeleccionada.con_espera ? "Sí" : "No"],
                     ["Recurrente", consultaSeleccionada.es_recurrente ? "Sí" : "No"],

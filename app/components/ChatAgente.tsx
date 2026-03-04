@@ -734,6 +734,7 @@ export default function ChatAgente() {
       hora_recurrente: a.horaRecurrente ?? null,
       fecha_inicio_recurrente: a.fechaInicioRecurrente ?? null,
       fecha_fin_recurrente: a.fechaFinRecurrente ?? null,
+      id_viaje: a.idViaje ?? null,
       centro_costos: a.centroCostos ?? "",
       solicitado_por: a.solicitadoPor ?? "",
       mail_solicitante: session.user.email ?? null,

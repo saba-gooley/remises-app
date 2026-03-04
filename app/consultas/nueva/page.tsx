@@ -119,6 +119,7 @@ export default function NuevaConsultaPage() {
       }
 
       const payload = {
+        id_viaje: data.idViaje || null,
         usuario_id: session?.user?.id ?? null,
         cliente_id: clienteId,
         mail_solicitante: session?.user?.email ?? null,
