@@ -582,9 +582,20 @@ export default function ChatAgente() {
     });
     setSubmitting(true);
     const a = answers;
+
+    // Obtener cliente_id del usuario logueado
+    let clienteId: string | null = null;
+    const { data: usuarioData } = await supabase
+      .from("usuarios")
+      .select("cliente_id")
+      .eq("id", session.user.id)
+      .maybeSingle();
+    clienteId = usuarioData?.cliente_id ?? null;
+
     const baseReserva = {
       id_viaje: a.idViaje ?? "",
       usuario_id: session.user.id,
+      cliente_id: clienteId,
       tipo_viaje: a.tipoViaje ?? "pasajero",
       fecha_viaje: a.fechaViaje ?? "",
       hora_viaje: a.horaViaje ?? "",

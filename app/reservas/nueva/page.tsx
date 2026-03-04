@@ -158,9 +158,21 @@ export default function NuevaReservaPage() {
         data: { session },
       } = await supabase.auth.getSession();
 
+      // Obtener cliente_id del usuario logueado
+      let clienteId: string | null = null;
+      if (session?.user?.id) {
+        const { data: usuarioData } = await supabase
+          .from("usuarios")
+          .select("cliente_id")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        clienteId = usuarioData?.cliente_id ?? null;
+      }
+
       const baseReserva = {
         id_viaje: data.idViaje,
         usuario_id: session?.user?.id ?? null,
+        cliente_id: clienteId,
         tipo_viaje: data.tipoViaje,
         fecha_viaje: data.fechaViaje,
         hora_viaje: data.horaViaje,
