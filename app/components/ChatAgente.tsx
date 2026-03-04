@@ -247,8 +247,8 @@ function parseAndValidateHora(input: string): string | null {
   return null;
 }
 
-/** Parsea fecha DD/MM/YYYY o YYYY-MM-DD, valida que sea válida y futura. Retorna YYYY-MM-DD o null. */
-function parseAndValidateFecha(input: string): string | null {
+/** Parsea fecha DD/MM/YYYY o YYYY-MM-DD. Retorna { value, error } donde error puede ser "formato" | "pasada" | null. */
+function parseAndValidateFecha(input: string): { value: string | null; error: "formato" | "pasada" | null } {
   const s = input.trim();
   let day: number;
   let month: number;
@@ -265,7 +265,7 @@ function parseAndValidateFecha(input: string): string | null {
       month = parseInt(yyyymmdd[2]!, 10) - 1;
       day = parseInt(yyyymmdd[3]!, 10);
     } else {
-      return null;
+      return { value: null, error: "formato" };
     }
   }
   const date = new Date(year, month, day);
@@ -274,14 +274,14 @@ function parseAndValidateFecha(input: string): string | null {
     date.getMonth() !== month ||
     date.getDate() !== day
   ) {
-    return null;
+    return { value: null, error: "formato" };
   }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   if (date.getTime() < today.getTime()) {
-    return null;
+    return { value: null, error: "pasada" };
   }
-  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return { value: `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`, error: null };
 }
 
 export default function ChatAgente() {
@@ -611,6 +611,7 @@ export default function ChatAgente() {
       mail_solicitante: session.user.email ?? null,
       notas: a.notas ? [a.notas] : [],
       estado: "a_confirmar",
+      creado_en: new Date().toISOString(),
     };
     const reservasAInsertar =
       a.idaYVuelta === "SI" && a.conEspera === "NO"
@@ -888,14 +889,16 @@ export default function ChatAgente() {
     const newAnswers = { ...answers };
 
     if (step === "fecha_viaje") {
-      const parsed = parseAndValidateFecha(raw);
-      if (!parsed) {
+      const { value: parsedFecha, error: fechaError } = parseAndValidateFecha(raw);
+      if (!parsedFecha) {
         addAgent(
-          "No entendí la fecha. Por favor ingresá la fecha en formato DD/MM/YYYY, por ejemplo 15/03/2026",
+          fechaError === "pasada"
+            ? "La fecha del viaje no puede ser anterior a hoy. Por favor ingresá una fecha futura (DD/MM/YYYY)."
+            : "No entendí la fecha. Por favor ingresá la fecha en formato DD/MM/YYYY, por ejemplo 15/03/2026.",
         );
         return;
       }
-      newAnswers.fechaViaje = parsed;
+      newAnswers.fechaViaje = parsedFecha;
     } else if (step === "hora_viaje") {
       const parsed = parseAndValidateHora(raw);
       if (!parsed) {

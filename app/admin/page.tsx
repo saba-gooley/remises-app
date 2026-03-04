@@ -20,6 +20,7 @@ type Reserva = {
   centro_costos: string | null;
   solicitado_por: string | null;
   estado: string | null;
+  creado_en: string | null;
 };
 
 type Cliente = {
@@ -49,10 +50,22 @@ export default function AdminPage() {
   const [clientesLoading, setClientesLoading] = useState(false);
   const [clientesError, setClientesError] = useState<string | null>(null);
   const [nuevoClienteNombre, setNuevoClienteNombre] = useState("");
-  const [nuevoClienteConfig, setNuevoClienteConfig] = useState<string>("{}");
   const [savingCliente, setSavingCliente] = useState(false);
-  const [savingAsignacionId, setSavingAsignacionId] = useState<string | null>(
-    null,
+  const [savingAsignacionId, setSavingAsignacionId] = useState<string | null>(null);
+  const [editandoClienteId, setEditandoClienteId] = useState<string | null>(null);
+
+  const CAMPOS_CONFIG = [
+    { key: "id_viaje", label: "ID Viaje" },
+    { key: "centro_costos", label: "Centro de Costos" },
+    { key: "solicitado_por", label: "Solicitado Por" },
+    { key: "pasajero_cantidad", label: "Cantidad de pasajeros" },
+    { key: "origen_observaciones", label: "Observaciones de origen" },
+    { key: "destino_observaciones", label: "Observaciones de destino" },
+    { key: "notas", label: "Notas" },
+  ] as const;
+
+  const [checkboxConfig, setCheckboxConfig] = useState<Record<string, boolean>>(
+    Object.fromEntries(CAMPOS_CONFIG.map((c) => [c.key, false])),
   );
 
   const fetchReservas = async () => {
@@ -171,33 +184,54 @@ export default function AdminPage() {
     setActionLoadingId(null);
   };
 
-  const handleCrearCliente = async (event: { preventDefault: () => void }) => {
+  const resetFormCliente = () => {
+    setNuevoClienteNombre("");
+    setCheckboxConfig(Object.fromEntries(CAMPOS_CONFIG.map((c) => [c.key, false])));
+    setEditandoClienteId(null);
+  };
+
+  const handleEditarCliente = (cliente: Cliente) => {
+    setEditandoClienteId(cliente.id);
+    setNuevoClienteNombre(cliente.nombre ?? "");
+    const cfg = (cliente.configuracion_campos ?? {}) as Record<string, boolean>;
+    setCheckboxConfig(Object.fromEntries(CAMPOS_CONFIG.map((c) => [c.key, !!cfg[c.key]])));
+  };
+
+  const handleGuardarCliente = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
     setSavingCliente(true);
     setClientesError(null);
 
+    const configuracion_campos = Object.fromEntries(
+      CAMPOS_CONFIG.map((c) => [c.key, !!checkboxConfig[c.key]]),
+    );
+
     try {
-      let parsedConfig: unknown = {};
-      if (nuevoClienteConfig.trim()) {
-        parsedConfig = JSON.parse(nuevoClienteConfig);
-      }
-
-      const { error: insertError } = await supabase.from("clientes").insert({
-        nombre: nuevoClienteNombre || null,
-        configuracion_campos: parsedConfig,
-      });
-
-      if (insertError) {
-        setClientesError(insertError.message);
+      if (editandoClienteId) {
+        const { error: updateError } = await supabase
+          .from("clientes")
+          .update({ nombre: nuevoClienteNombre || null, configuracion_campos })
+          .eq("id", editandoClienteId);
+        if (updateError) {
+          setClientesError(updateError.message);
+        } else {
+          resetFormCliente();
+          await fetchClientesYUsuarios();
+        }
       } else {
-        setNuevoClienteNombre("");
-        setNuevoClienteConfig("{}");
-        await fetchClientesYUsuarios();
+        const { error: insertError } = await supabase.from("clientes").insert({
+          nombre: nuevoClienteNombre || null,
+          configuracion_campos,
+        });
+        if (insertError) {
+          setClientesError(insertError.message);
+        } else {
+          resetFormCliente();
+          await fetchClientesYUsuarios();
+        }
       }
-    } catch (e: any) {
-      setClientesError(
-        e?.message ?? "Error al crear el cliente. Verificá el JSON.",
-      );
+    } catch (e: unknown) {
+      setClientesError((e as Error)?.message ?? "Error al guardar el cliente.");
     } finally {
       setSavingCliente(false);
     }
@@ -296,8 +330,9 @@ export default function AdminPage() {
                   <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500">
                     <tr>
                       <th className="px-3 py-2">ID</th>
+                      <th className="px-3 py-2">Fecha solicitud</th>
                       <th className="px-3 py-2">ID Viaje</th>
-                      <th className="px-3 py-2">Fecha y hora</th>
+                      <th className="px-3 py-2">Fecha y hora viaje</th>
                       <th className="px-3 py-2">Origen</th>
                       <th className="px-3 py-2">Destino</th>
                       <th className="px-3 py-2">Pasajero</th>
@@ -314,6 +349,11 @@ export default function AdminPage() {
                       >
                         <td className="px-3 py-2 text-xs text-zinc-500">
                           {reserva.id}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-zinc-600">
+                          {reserva.creado_en
+                            ? new Date(reserva.creado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
+                            : "-"}
                         </td>
                         <td className="px-3 py-2 text-sm text-zinc-900">
                           {reserva.id_viaje}
@@ -389,10 +429,21 @@ export default function AdminPage() {
 
             <div className="grid gap-6 md:grid-cols-2">
               <section className="space-y-3 rounded-lg border border-zinc-200 p-4">
-                <h2 className="text-sm font-semibold text-zinc-900">
-                  Crear nuevo cliente
-                </h2>
-                <form onSubmit={handleCrearCliente} className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-zinc-900">
+                    {editandoClienteId ? "Editar cliente" : "Crear nuevo cliente"}
+                  </h2>
+                  {editandoClienteId && (
+                    <button
+                      type="button"
+                      onClick={resetFormCliente}
+                      className="text-xs text-zinc-500 hover:text-zinc-800 underline"
+                    >
+                      Cancelar edición
+                    </button>
+                  )}
+                </div>
+                <form onSubmit={handleGuardarCliente} className="space-y-3">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-700">
                       Nombre
@@ -405,22 +456,31 @@ export default function AdminPage() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-zinc-700">
-                      configuración_campos (JSON)
-                    </label>
-                    <textarea
-                      rows={4}
-                      value={nuevoClienteConfig}
-                      onChange={(e) => setNuevoClienteConfig(e.target.value)}
-                      className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-mono shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    />
+                    <p className="mb-2 text-xs font-medium text-zinc-700">
+                      Campos obligatorios para este cliente
+                    </p>
+                    <div className="space-y-2">
+                      {CAMPOS_CONFIG.map((campo) => (
+                        <label key={campo.key} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!checkboxConfig[campo.key]}
+                            onChange={(e) =>
+                              setCheckboxConfig((prev) => ({ ...prev, [campo.key]: e.target.checked }))
+                            }
+                            className="h-3.5 w-3.5 rounded border-zinc-300 accent-zinc-900"
+                          />
+                          <span className="text-xs text-zinc-700">{campo.label}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                   <button
                     type="submit"
                     disabled={savingCliente}
                     className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {savingCliente ? "Guardando..." : "Crear cliente"}
+                    {savingCliente ? "Guardando..." : editandoClienteId ? "Guardar cambios" : "Crear cliente"}
                   </button>
                 </form>
               </section>
@@ -440,27 +500,35 @@ export default function AdminPage() {
                     <table className="min-w-full text-left text-xs">
                       <thead className="border-b border-zinc-200 bg-zinc-50 text-[10px] uppercase text-zinc-500">
                         <tr>
-                          <th className="px-2 py-1">ID</th>
                           <th className="px-2 py-1">Nombre</th>
-                          <th className="px-2 py-1">configuracion_campos</th>
+                          <th className="px-2 py-1">Campos obligatorios</th>
+                          <th className="px-2 py-1"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {clientes.map((cliente) => (
-                          <tr key={cliente.id} className="border-b border-zinc-100">
-                            <td className="px-2 py-1 text-[11px] text-zinc-500">
-                              {cliente.id}
-                            </td>
-                            <td className="px-2 py-1 text-[11px] text-zinc-800">
-                              {cliente.nombre}
-                            </td>
-                            <td className="px-2 py-1 text-[10px] text-zinc-600">
-                              {cliente.configuracion_campos
-                                ? JSON.stringify(cliente.configuracion_campos)
-                                : "{}"}
-                            </td>
-                          </tr>
-                        ))}
+                        {clientes.map((cliente) => {
+                          const cfg = (cliente.configuracion_campos ?? {}) as Record<string, boolean>;
+                          const activos = CAMPOS_CONFIG.filter((c) => cfg[c.key]).map((c) => c.label);
+                          return (
+                            <tr key={cliente.id} className={`border-b border-zinc-100 ${editandoClienteId === cliente.id ? "bg-zinc-50" : ""}`}>
+                              <td className="px-2 py-1 text-[11px] text-zinc-800">
+                                {cliente.nombre ?? "-"}
+                              </td>
+                              <td className="px-2 py-1 text-[10px] text-zinc-600">
+                                {activos.length > 0 ? activos.join(", ") : "Ninguno"}
+                              </td>
+                              <td className="px-2 py-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditarCliente(cliente)}
+                                  className="text-[10px] font-medium text-zinc-600 underline hover:text-zinc-900"
+                                >
+                                  Editar
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

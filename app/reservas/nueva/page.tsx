@@ -69,7 +69,7 @@ export default function NuevaReservaPage() {
     control,
     handleSubmit,
     watch,
-    formState: { isSubmitting },
+    formState: { isSubmitting, errors },
   } = useForm<ReservaFormValues>({
     defaultValues: {
       tipoViaje: "pasajero",
@@ -187,6 +187,7 @@ export default function NuevaReservaPage() {
         mail_solicitante: session?.user?.email ?? null,
         notas: data.notas || null,
         estado: "a_confirmar",
+        creado_en: new Date().toISOString(),
       };
 
       // Regla de negocio indicada:
@@ -294,8 +295,20 @@ export default function NuevaReservaPage() {
                   <input
                     type="date"
                     className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    {...register("fechaViaje", { required: true })}
+                    {...register("fechaViaje", {
+                      required: "La fecha del viaje es obligatoria",
+                      validate: (value) => {
+                        if (!value) return true;
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const selected = new Date(value + "T00:00:00");
+                        return selected >= today || "La fecha del viaje no puede ser anterior a hoy";
+                      },
+                    })}
                   />
+                  {errors.fechaViaje && (
+                    <p className="mt-1 text-xs text-red-600">{errors.fechaViaje.message}</p>
+                  )}
                 </div>
 
                 <div>

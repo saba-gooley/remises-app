@@ -17,6 +17,7 @@ type Reserva = {
   destino_localidad: string | null;
   pasajero_nombre: string | null;
   estado: string | null;
+  creado_en: string | null;
 };
 
 type Tab = "pendientes" | "confirmadas" | "rechazadas";
@@ -45,7 +46,7 @@ export default function MisReservasPage() {
       const { data, error: reservasError } = await supabase
         .from("reservas")
         .select(
-          "id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, pasajero_nombre, estado",
+          "id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, pasajero_nombre, estado, creado_en",
         )
         .eq("usuario_id", session.user.id)
         .order("id", { ascending: false });
@@ -181,6 +182,7 @@ export default function MisReservasPage() {
               <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500">
                 <tr>
                   <th className="px-3 py-2">Nº</th>
+                  <th className="px-3 py-2">Fecha solicitud</th>
                   <th className="px-3 py-2">Fecha y hora viaje</th>
                   <th className="px-3 py-2">Origen</th>
                   <th className="px-3 py-2">Destino</th>
@@ -195,6 +197,11 @@ export default function MisReservasPage() {
                     className="border-b border-zinc-100 hover:bg-zinc-50"
                   >
                     <td className="px-3 py-2 text-xs text-zinc-500">{r.id}</td>
+                    <td className="px-3 py-2 text-xs text-zinc-600">
+                      {r.creado_en
+                        ? new Date(r.creado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
+                        : "-"}
+                    </td>
                     <td className="px-3 py-2 text-zinc-700">
                       {formatFechaHora(r.fecha_viaje, r.hora_viaje)}
                     </td>
