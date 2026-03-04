@@ -15,14 +15,19 @@ type Reserva = {
   destino_calle: string | null;
   destino_altura: string | null;
   destino_localidad: string | null;
+  pasajero_nombre: string | null;
   estado: string | null;
+  created_at: string | null;
 };
+
+type Tab = "pendientes" | "confirmadas" | "rechazadas";
 
 export default function MisReservasPage() {
   const router = useRouter();
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("pendientes");
 
   useEffect(() => {
     const fetchMisReservas = async () => {
@@ -40,10 +45,11 @@ export default function MisReservasPage() {
 
       const { data, error: reservasError } = await supabase
         .from("reservas")
-        .select("id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, estado")
+        .select(
+          "id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, pasajero_nombre, estado, created_at",
+        )
         .eq("usuario_id", session.user.id)
-        .order("fecha_viaje", { ascending: false })
-        .order("hora_viaje", { ascending: false });
+        .order("created_at", { ascending: false });
 
       if (reservasError) {
         setError(reservasError.message);
@@ -83,6 +89,12 @@ export default function MisReservasPage() {
     return parte ? `${parte}${localidad ? `, ${localidad}` : ""}` : "-";
   };
 
+  const pendientes = reservas.filter((r) => r.estado === "a_confirmar");
+  const confirmadas = reservas.filter((r) => r.estado === "confirmada");
+  const rechazadas = reservas.filter((r) => r.estado === "rechazada");
+  const reservasFiltradas =
+    tab === "pendientes" ? pendientes : tab === "confirmadas" ? confirmadas : rechazadas;
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-50">
@@ -94,12 +106,9 @@ export default function MisReservasPage() {
   return (
     <div className="flex min-h-screen bg-zinc-50">
       <div className="mx-auto my-8 w-full max-w-5xl rounded-xl bg-white p-6 shadow">
-        <h1 className="mb-2 text-2xl font-semibold text-zinc-900">
+        <h1 className="mb-4 text-2xl font-semibold text-zinc-900">
           Mis reservas
         </h1>
-        <p className="mb-4 text-sm text-zinc-600">
-          Reservas ordenadas de la más reciente a la más antigua.
-        </p>
 
         {error && (
           <p className="mb-3 text-sm text-red-600" role="alert">
@@ -107,31 +116,86 @@ export default function MisReservasPage() {
           </p>
         )}
 
-        {reservas.length === 0 ? (
+        {/* Tabs */}
+        <div className="mb-4 flex gap-2 border-b border-zinc-200">
+          <button
+            type="button"
+            onClick={() => setTab("pendientes")}
+            className={`rounded-t-md px-4 py-2 text-xs font-medium ${
+              tab === "pendientes"
+                ? "border border-b-white border-zinc-200 bg-white text-zinc-900"
+                : "text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            Pendientes de confirmar
+            {pendientes.length > 0 && (
+              <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                {pendientes.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("confirmadas")}
+            className={`rounded-t-md px-4 py-2 text-xs font-medium ${
+              tab === "confirmadas"
+                ? "border border-b-white border-zinc-200 bg-white text-zinc-900"
+                : "text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            Confirmadas
+            {confirmadas.length > 0 && (
+              <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                {confirmadas.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("rechazadas")}
+            className={`rounded-t-md px-4 py-2 text-xs font-medium ${
+              tab === "rechazadas"
+                ? "border border-b-white border-zinc-200 bg-white text-zinc-900"
+                : "text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            Rechazadas
+            {rechazadas.length > 0 && (
+              <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                {rechazadas.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {reservasFiltradas.length === 0 ? (
           <p className="text-sm text-zinc-600">
-            No tenés reservas cargadas.
+            {tab === "pendientes"
+              ? "No tenés reservas pendientes de confirmación."
+              : tab === "confirmadas"
+                ? "No tenés reservas confirmadas."
+                : "No tenés reservas rechazadas."}
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2">Nº reserva</th>
-                  <th className="px-3 py-2">Fecha y hora</th>
+                  <th className="px-3 py-2">Nº</th>
+                  <th className="px-3 py-2">Fecha y hora viaje</th>
                   <th className="px-3 py-2">Origen</th>
                   <th className="px-3 py-2">Destino</th>
+                  <th className="px-3 py-2">Pasajero</th>
                   <th className="px-3 py-2">Estado</th>
                 </tr>
               </thead>
               <tbody>
-                {reservas.map((r) => (
+                {reservasFiltradas.map((r) => (
                   <tr
                     key={r.id}
                     className="border-b border-zinc-100 hover:bg-zinc-50"
                   >
-                    <td className="px-3 py-2 font-medium text-zinc-900">
-                      {r.id}
-                    </td>
+                    <td className="px-3 py-2 text-xs text-zinc-500">{r.id}</td>
                     <td className="px-3 py-2 text-zinc-700">
                       {formatFechaHora(r.fecha_viaje, r.hora_viaje)}
                     </td>
@@ -149,14 +213,17 @@ export default function MisReservasPage() {
                         r.destino_localidad,
                       )}
                     </td>
+                    <td className="px-3 py-2 text-zinc-700">
+                      {r.pasajero_nombre ?? "-"}
+                    </td>
                     <td className="px-3 py-2">
                       <span
                         className={
                           r.estado === "confirmada"
-                            ? "text-emerald-700"
+                            ? "font-medium text-emerald-700"
                             : r.estado === "rechazada"
-                              ? "text-red-600"
-                              : "text-amber-700"
+                              ? "font-medium text-red-600"
+                              : "font-medium text-amber-700"
                         }
                       >
                         {r.estado === "confirmada"

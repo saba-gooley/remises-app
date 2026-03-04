@@ -62,8 +62,7 @@ export default function AdminPage() {
       .from("reservas")
       .select("*")
       .eq("estado", "a_confirmar")
-      .order("fecha_viaje", { ascending: true })
-      .order("hora_viaje", { ascending: true });
+      .order("created_at", { ascending: false });
 
     if (reservasError) {
       setError(reservasError.message);
