@@ -17,7 +17,6 @@ type Reserva = {
   destino_localidad: string | null;
   pasajero_nombre: string | null;
   estado: string | null;
-  created_at: string | null;
 };
 
 type Tab = "pendientes" | "confirmadas" | "rechazadas";
@@ -46,10 +45,10 @@ export default function MisReservasPage() {
       const { data, error: reservasError } = await supabase
         .from("reservas")
         .select(
-          "id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, pasajero_nombre, estado, created_at",
+          "id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, pasajero_nombre, estado",
         )
         .eq("usuario_id", session.user.id)
-        .order("created_at", { ascending: false });
+        .order("id", { ascending: false });
 
       if (reservasError) {
         setError(reservasError.message);

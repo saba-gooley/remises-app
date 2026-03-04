@@ -62,7 +62,7 @@ export default function AdminPage() {
       .from("reservas")
       .select("*")
       .eq("estado", "a_confirmar")
-      .order("created_at", { ascending: false });
+      .order("id", { ascending: false });
 
     if (reservasError) {
       setError(reservasError.message);
