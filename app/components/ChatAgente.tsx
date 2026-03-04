@@ -50,6 +50,7 @@ type Answers = {
 const SALUDO =
   "¿En qué puedo ayudarte?\n1) Nueva reserva\n2) Consultar mis reservas";
 
+// Opciones de modo ocultas — reservadas para uso futuro si el chat conversacional falla
 const PREGUNTA_MODO =
   "¿Cómo querés continuar?\n1) Dictar (mensaje libre, clásico)\n2) Guiarme (pregunta a pregunta)\n3) Chatear con el agente (conversacional)";
 
@@ -311,7 +312,7 @@ export default function ChatAgente() {
   useEffect(() => {
     if (!open) return;
     if (messages.length === 0) {
-      addAgent("¡Hola! Soy el agente de reservas.");
+      addAgent("¡Hola! Soy Camila, tu asistente de reservas. 😊");
       addAgent(SALUDO);
     }
   }, [open, messages.length, addAgent]);
@@ -350,8 +351,12 @@ export default function ChatAgente() {
       }
     }
     setLoading(false);
-    setStep("modo_reserva");
-    addAgent(PREGUNTA_MODO);
+    // Ir directamente al chat conversacional (Dictar/Guiarme ocultos para uso futuro)
+    setHistorialConversacional([]);
+    setDatosConversacional({});
+    setMissingStepsAfterDictar(null);
+    setStep("chat_conversacional");
+    addAgent("¡Perfecto! Contame los datos del viaje como quieras y yo los voy completando. Podés darme todo en un mensaje o de a poco.");
   }, [addAgent]);
 
   const startGuidedFlow = useCallback(() => {
@@ -786,10 +791,24 @@ export default function ChatAgente() {
             setAnswers((prev) => ({ ...prev, ...data.datos }));
           }
           if (data.accion === "confirmar") {
-            // Claude interpretó confirmación → crear la reserva
-            // Mergeamos aquí y pasamos directo para evitar race condition con setAnswers
+            // Claude interpretó confirmación → validar y crear la reserva
             const mergedAnswers: Answers = { ...answers, ...datosConversacional, ...(data.datos ?? {}) };
             console.log("[ChatAgente] accion=confirmar, mergedAnswers:", mergedAnswers);
+
+            // Validar que la fecha no sea anterior a hoy
+            if (mergedAnswers.fechaViaje) {
+              const fechaViaje = new Date(mergedAnswers.fechaViaje + "T00:00:00");
+              const hoy = new Date();
+              hoy.setHours(0, 0, 0, 0);
+              if (fechaViaje < hoy) {
+                addAgent(
+                  `La fecha del viaje (${mergedAnswers.fechaViaje.split("-").reverse().join("/")}) no puede ser anterior a hoy. ¿Querés indicarme una fecha correcta?`,
+                );
+                setStep("chat_conversacional");
+                return;
+              }
+            }
+
             setAnswers(mergedAnswers);
             void submitReserva(mergedAnswers);
           } else if (data.accion === "cancelar_solicitado") {
@@ -1084,7 +1103,7 @@ export default function ChatAgente() {
   ]);
 
   const showChoiceButtons = step === "greeting";
-  const showModoButtons = step === "modo_reserva";
+  const showModoButtons = false; // oculto — flujo de modo desactivado, se va directo al chat conversacional
   const showConfirmButtons = step === "confirmar";
 
   return (
