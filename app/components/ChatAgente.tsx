@@ -631,7 +631,8 @@ export default function ChatAgente() {
 
   const submitReserva = useCallback(async (answersOverride?: Answers) => {
     if (!session?.user) {
-      console.log("[ChatAgente] submitReserva: no hay sesión", { session });
+      console.error("[ChatAgente] submitReserva: no hay sesión", { session });
+      addAgent("Tu sesión expiró. Por favor recargá la página e iniciá sesión nuevamente.");
       return;
     }
     setSubmitting(true);
@@ -948,6 +949,7 @@ export default function ChatAgente() {
               setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
             }
             setAnswers(mergedAnswers);
+            console.log("[ChatAgente] submit decision: esConsultaRef.current =", esConsultaRef.current, "mergedAnswers:", mergedAnswers);
             if (esConsultaRef.current) {
               void submitConsulta(mergedAnswers);
             } else {
@@ -963,8 +965,12 @@ export default function ChatAgente() {
             ];
             setHistorialConversacional(historialActualizado);
             if (data.datos) {
-              setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
-              setAnswers((prev) => ({ ...prev, ...data.datos }));
+              // Solo mezclar valores no-nulos para no destruir datos acumulados previos
+              const nonNullElseDatos = Object.fromEntries(
+                Object.entries(data.datos).filter(([, v]) => v !== null && v !== undefined && v !== ""),
+              );
+              setDatosConversacional((prev) => ({ ...prev, ...nonNullElseDatos }));
+              setAnswers((prev) => ({ ...prev, ...nonNullElseDatos }));
             }
             if (data.accion === "cancelar_solicitado") {
               setStep("confirmar_conversacional");
