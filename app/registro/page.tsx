@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type RegisterFormValues = {
+  nombre: string;
   email: string;
   password: string;
   confirmPassword: string;
@@ -17,7 +18,7 @@ export default function RegisterPage() {
     register,
     handleSubmit,
     watch,
-    formState: { isSubmitting },
+    formState: { isSubmitting, errors },
   } = useForm<RegisterFormValues>();
 
   const [error, setError] = useState<string | null>(null);
@@ -27,12 +28,7 @@ export default function RegisterPage() {
     setError(null);
     setSuccessMessage(null);
 
-    if (data.password !== data.confirmPassword) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
-
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
     });
@@ -42,17 +38,21 @@ export default function RegisterPage() {
       return;
     }
 
-    setSuccessMessage(
-      "Registro exitoso. Revisá tu email para confirmar la cuenta.",
-    );
+    const userId = signUpData.user?.id;
+    if (userId) {
+      await supabase.from("usuarios").upsert({
+        id: userId,
+        email: data.email,
+        nombre: data.nombre,
+      });
+    }
 
-    // Opcional: redirigir al login después de unos segundos
-    setTimeout(() => {
-      router.push("/login");
-    }, 2500);
+    setSuccessMessage("Registro exitoso. Revisá tu email para confirmar la cuenta.");
+    setTimeout(() => router.push("/login"), 2500);
   };
 
   const password = watch("password");
+  const inputCls = "w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50">
@@ -64,11 +64,26 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Nombre <span className="text-red-600">*</span>
+            </label>
+            <input
+              type="text"
+              className={inputCls}
+              placeholder="Tu nombre completo"
+              {...register("nombre", { required: "El nombre es obligatorio" })}
+            />
+            {errors.nombre && (
+              <p className="mt-1 text-xs text-red-600">{errors.nombre.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
               Email corporativo
             </label>
             <input
               type="email"
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+              className={inputCls}
               {...register("email", { required: true })}
             />
           </div>
@@ -79,7 +94,7 @@ export default function RegisterPage() {
             </label>
             <input
               type="password"
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+              className={inputCls}
               {...register("password", { required: true, minLength: 6 })}
             />
           </div>
@@ -90,25 +105,23 @@ export default function RegisterPage() {
             </label>
             <input
               type="password"
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+              className={inputCls}
               {...register("confirmPassword", {
                 required: true,
                 validate: (value) =>
                   value === password || "Las contraseñas no coinciden.",
               })}
             />
+            {errors.confirmPassword && (
+              <p className="mt-1 text-xs text-red-600">{errors.confirmPassword.message}</p>
+            )}
           </div>
 
           {error && (
-            <p className="text-sm text-red-600" role="alert">
-              {error}
-            </p>
+            <p className="text-sm text-red-600" role="alert">{error}</p>
           )}
-
           {successMessage && (
-            <p className="text-sm text-emerald-600" role="status">
-              {successMessage}
-            </p>
+            <p className="text-sm text-emerald-600" role="status">{successMessage}</p>
           )}
 
           <button
@@ -133,4 +146,3 @@ export default function RegisterPage() {
     </div>
   );
 }
-

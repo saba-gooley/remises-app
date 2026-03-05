@@ -301,6 +301,7 @@ export default function ChatAgente() {
   const [historialConversacional, setHistorialConversacional] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [datosConversacional, setDatosConversacional] = useState<Partial<Answers>>({});
   const [esConsulta, setEsConsulta] = useState(false);
+  const [nombreUsuario, setNombreUsuario] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const addAgent = useCallback((text: string) => {
@@ -310,13 +311,32 @@ export default function ChatAgente() {
     setMessages((m) => [...m, { role: "user", text }]);
   }, []);
 
+  // Cargar nombre del usuario al montar el componente
+  useEffect(() => {
+    const loadNombre = async () => {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      if (!s?.user) return;
+      const { data: usuario } = await supabase
+        .from("usuarios")
+        .select("nombre")
+        .eq("id", s.user.id)
+        .maybeSingle();
+      const nombre = usuario?.nombre ?? s.user.email?.split("@")[0] ?? null;
+      setNombreUsuario(nombre);
+    };
+    void loadNombre();
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     if (messages.length === 0) {
-      addAgent("¡Hola! Soy Camila, tu asistente de reservas. 😊");
+      const saludo = nombreUsuario
+        ? `¡Hola, ${nombreUsuario}! Soy Camila, tu asistente de reservas. 😊`
+        : "¡Hola! Soy Camila, tu asistente de reservas. 😊";
+      addAgent(saludo);
       addAgent(SALUDO);
     }
-  }, [open, messages.length, addAgent]);
+  }, [open, messages.length, addAgent, nombreUsuario]);
 
   useEffect(() => {
     if (open) {
@@ -896,8 +916,11 @@ export default function ChatAgente() {
               }
             }
 
-            // Fecha válida → mostrar confirmación de Claude y crear reserva/consulta
-            addAgent(msgAsistente);
+            // Fecha válida → crear reserva o consulta
+            // Solo mostrar el mensaje de Claude si es una reserva; para consulta lo muestra submitConsulta
+            if (!esConsulta) {
+              addAgent(msgAsistente);
+            }
             setHistorialConversacional([
               ...nuevoHistorial2,
               { role: "user" as const, content: raw },

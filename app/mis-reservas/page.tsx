@@ -7,18 +7,42 @@ import { supabase } from "@/lib/supabase";
 type Reserva = {
   id: number;
   id_viaje: string | null;
+  tipo_viaje: string | null;
   fecha_viaje: string | null;
   hora_viaje: string | null;
   origen_calle: string | null;
   origen_altura: string | null;
   origen_localidad: string | null;
+  origen_observaciones: string | null;
   destino_calle: string | null;
   destino_altura: string | null;
   destino_localidad: string | null;
+  destino_observaciones: string | null;
   pasajero_nombre: string | null;
+  pasajero_cantidad: number | null;
+  pasajero_telefono: string | null;
+  con_espera: boolean | null;
+  ida_y_vuelta: boolean | null;
+  es_recurrente: boolean | null;
+  dias_recurrente: string[] | null;
+  hora_recurrente: string | null;
+  fecha_inicio_recurrente: string | null;
+  fecha_fin_recurrente: string | null;
+  centro_costos: string | null;
+  solicitado_por: string | null;
+  mail_solicitante: string | null;
   notas: string | string[] | null;
   estado: string | null;
   creado_en: string | null;
+};
+
+type Parada = {
+  id: number;
+  calle: string | null;
+  altura: string | null;
+  localidad: string | null;
+  pasajero_nombre: string | null;
+  pasajero_telefono: string | null;
 };
 
 type Tab = "pendientes" | "confirmadas" | "rechazadas";
@@ -49,6 +73,9 @@ export default function MisReservasPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("pendientes");
   const [orden, setOrden] = useState<OrdenCampo>("creado_en");
+  const [reservaSeleccionada, setReservaSeleccionada] = useState<Reserva | null>(null);
+  const [paradasDetalle, setParadasDetalle] = useState<Parada[]>([]);
+  const [loadingParadas, setLoadingParadas] = useState(false);
 
   useEffect(() => {
     const fetchMisReservas = async () => {
@@ -60,7 +87,7 @@ export default function MisReservasPage() {
 
       const { data, error: reservasError } = await supabase
         .from("reservas")
-        .select("id, id_viaje, fecha_viaje, hora_viaje, origen_calle, origen_altura, origen_localidad, destino_calle, destino_altura, destino_localidad, pasajero_nombre, notas, estado, creado_en")
+        .select("*")
         .eq("usuario_id", session.user.id)
         .order("id", { ascending: false });
 
@@ -84,6 +111,22 @@ export default function MisReservasPage() {
 
   const toggleOrden = () =>
     setOrden((prev) => (prev === "creado_en" ? "fecha_viaje" : "creado_en"));
+
+  const abrirDetalle = async (r: Reserva) => {
+    if (reservaSeleccionada?.id === r.id) {
+      setReservaSeleccionada(null);
+      return;
+    }
+    setReservaSeleccionada(r);
+    setParadasDetalle([]);
+    setLoadingParadas(true);
+    const { data } = await supabase
+      .from("paradas")
+      .select("id, calle, altura, localidad, pasajero_nombre, pasajero_telefono")
+      .eq("reserva_id", r.id);
+    setParadasDetalle((data ?? []) as Parada[]);
+    setLoadingParadas(false);
+  };
 
   if (loading) {
     return (
@@ -152,7 +195,11 @@ export default function MisReservasPage() {
               </thead>
               <tbody>
                 {reservasFiltradas.map((r) => (
-                  <tr key={r.id} className="border-b border-zinc-100 hover:bg-zinc-50">
+                  <tr
+                    key={r.id}
+                    onClick={() => void abrirDetalle(r)}
+                    className={`cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 ${reservaSeleccionada?.id === r.id ? "bg-zinc-50" : ""}`}
+                  >
                     <td className="px-3 py-2 text-xs text-zinc-600">{fmt(r.creado_en, true)}</td>
                     <td className="px-3 py-2 text-xs text-zinc-700">{fmt(r.fecha_viaje)}</td>
                     <td className="px-3 py-2 text-xs text-zinc-700">{r.hora_viaje ?? "-"}</td>
@@ -174,6 +221,87 @@ export default function MisReservasPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Panel de detalle */}
+        {reservaSeleccionada && (
+          <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
+            <div className="mb-4 flex items-start justify-between">
+              <h2 className="text-base font-semibold text-zinc-900">
+                Detalle reserva #{reservaSeleccionada.id}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setReservaSeleccionada(null)}
+                className="text-xs text-zinc-500 underline hover:text-zinc-800"
+              >
+                Cerrar
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs md:grid-cols-3 lg:grid-cols-4">
+              {([
+                ["Fecha solicitud", fmt(reservaSeleccionada.creado_en, true)],
+                ["ID Viaje", reservaSeleccionada.id_viaje],
+                ["Tipo de viaje", reservaSeleccionada.tipo_viaje],
+                ["Fecha viaje", fmt(reservaSeleccionada.fecha_viaje)],
+                ["Hora", reservaSeleccionada.hora_viaje],
+                ["Origen", dir(reservaSeleccionada.origen_calle, reservaSeleccionada.origen_altura, reservaSeleccionada.origen_localidad)],
+                ["Obs. origen", reservaSeleccionada.origen_observaciones],
+                ["Destino", dir(reservaSeleccionada.destino_calle, reservaSeleccionada.destino_altura, reservaSeleccionada.destino_localidad)],
+                ["Obs. destino", reservaSeleccionada.destino_observaciones],
+                ["Pasajero", reservaSeleccionada.pasajero_nombre],
+                ["Teléfono", reservaSeleccionada.pasajero_telefono],
+                ["Cantidad pasajeros", reservaSeleccionada.pasajero_cantidad?.toString()],
+                ["Ida y vuelta", reservaSeleccionada.ida_y_vuelta ? "Sí" : "No"],
+                ["Con espera", reservaSeleccionada.con_espera ? "Sí" : "No"],
+                ["Recurrente", reservaSeleccionada.es_recurrente ? "Sí" : "No"],
+                ["Días recurrente", reservaSeleccionada.dias_recurrente?.join(", ")],
+                ["Hora recurrente", reservaSeleccionada.hora_recurrente],
+                ["Inicio recurrente", fmt(reservaSeleccionada.fecha_inicio_recurrente)],
+                ["Fin recurrente", fmt(reservaSeleccionada.fecha_fin_recurrente)],
+                ["Centro de costos", reservaSeleccionada.centro_costos],
+                ["Solicitado por", reservaSeleccionada.solicitado_por],
+                ["Mail solicitante", reservaSeleccionada.mail_solicitante],
+                ["Notas", notasText(reservaSeleccionada.notas)],
+                ["Estado", reservaSeleccionada.estado],
+              ] as [string, string | null | undefined][]).map(([label, value]) => (
+                <div key={label}>
+                  <span className="font-medium text-zinc-500">{label}: </span>
+                  <span className="text-zinc-800">{value ?? "-"}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4">
+              <h3 className="mb-2 text-xs font-semibold text-zinc-700">Paradas intermedias</h3>
+              {loadingParadas ? (
+                <p className="text-xs text-zinc-500">Cargando paradas...</p>
+              ) : paradasDetalle.length === 0 ? (
+                <p className="text-xs text-zinc-500">Sin paradas intermedias.</p>
+              ) : (
+                <table className="min-w-full text-xs">
+                  <thead className="border-b border-zinc-200 text-[10px] uppercase text-zinc-500">
+                    <tr>
+                      <th className="px-2 py-1 text-left">#</th>
+                      <th className="px-2 py-1 text-left">Dirección</th>
+                      <th className="px-2 py-1 text-left">Pasajero</th>
+                      <th className="px-2 py-1 text-left">Teléfono</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paradasDetalle.map((p, i) => (
+                      <tr key={p.id} className="border-b border-zinc-100">
+                        <td className="px-2 py-1 text-zinc-500">{i + 1}</td>
+                        <td className="px-2 py-1 text-zinc-700">{dir(p.calle, p.altura, p.localidad)}</td>
+                        <td className="px-2 py-1 text-zinc-700">{p.pasajero_nombre ?? "-"}</td>
+                        <td className="px-2 py-1 text-zinc-700">{p.pasajero_telefono ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
       </div>
