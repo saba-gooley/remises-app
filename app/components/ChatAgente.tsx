@@ -301,6 +301,7 @@ export default function ChatAgente() {
   const [historialConversacional, setHistorialConversacional] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [datosConversacional, setDatosConversacional] = useState<Partial<Answers>>({});
   const [esConsulta, setEsConsulta] = useState(false);
+  const esConsultaRef = useRef(false); // ref para evitar stale closures en callbacks async
   const [nombreUsuario, setNombreUsuario] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -376,6 +377,7 @@ export default function ChatAgente() {
     setHistorialConversacional([]);
     setDatosConversacional({});
     setMissingStepsAfterDictar(null);
+    esConsultaRef.current = false;
     setEsConsulta(false);
     setStep("chat_conversacional");
     addAgent("¡Perfecto! Contame los datos del viaje como quieras y yo los voy completando. Podés darme todo en un mensaje o de a poco.");
@@ -393,6 +395,7 @@ export default function ChatAgente() {
     setHistorialConversacional([]);
     setDatosConversacional({});
     setMissingStepsAfterDictar(null);
+    esConsultaRef.current = false;
     setEsConsulta(false);
     setStep("chat_conversacional");
     addAgent("¡Perfecto! Contame los datos del viaje como quieras y yo los voy completando. Podés darme todo en un mensaje o de a poco.");
@@ -419,6 +422,7 @@ export default function ChatAgente() {
     setHistorialConversacional([]);
     setDatosConversacional({});
     setMissingStepsAfterDictar(null);
+    esConsultaRef.current = true;
     setEsConsulta(true);
     setStep("chat_conversacional");
     addAgent("¡Perfecto! Contame los datos del viaje para la consulta de disponibilidad. Podés darme todo en un mensaje o de a poco.");
@@ -780,6 +784,7 @@ export default function ChatAgente() {
     setAnswers({});
     setParadaIndex(0);
     setMissingStepsAfterDictar(null);
+    esConsultaRef.current = false;
     setEsConsulta(false);
     setSubmitting(false);
   }, [session, answers, addAgent]);
@@ -923,7 +928,7 @@ export default function ChatAgente() {
 
             // Fecha válida → crear reserva o consulta
             // Solo mostrar el mensaje de Claude si es una reserva; para consulta lo muestra submitConsulta
-            if (!esConsulta) {
+            if (!esConsultaRef.current) {
               addAgent(msgAsistente);
             }
             setHistorialConversacional([
@@ -935,7 +940,7 @@ export default function ChatAgente() {
               setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
             }
             setAnswers(mergedAnswers);
-            if (esConsulta) {
+            if (esConsultaRef.current) {
               void submitConsulta(mergedAnswers);
             } else {
               void submitReserva(mergedAnswers);
@@ -1242,7 +1247,6 @@ export default function ChatAgente() {
     startConsultaFlow,
     submitReserva,
     submitConsulta,
-    esConsulta,
     router,
   ]);
 
@@ -1401,7 +1405,7 @@ export default function ChatAgente() {
                     onClick={() => {
                       addUser("Sí");
                       setInputValue("");
-                      if (esConsulta) void submitConsulta();
+                      if (esConsultaRef.current) void submitConsulta();
                       else void submitReserva();
                     }}
                     className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
