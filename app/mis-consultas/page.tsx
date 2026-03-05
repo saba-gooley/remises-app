@@ -16,7 +16,7 @@ type Consulta = {
   destino_altura: string | null;
   destino_localidad: string | null;
   pasajero_nombre: string | null;
-  notas: string | null;
+  notas: string | string[] | null;
   respuesta_operador: string | null;
   creado_en: string | null;
   // campos para convertir en reserva

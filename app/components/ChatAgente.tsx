@@ -762,7 +762,7 @@ export default function ChatAgente() {
       centro_costos: a.centroCostos ?? "",
       solicitado_por: a.solicitadoPor ?? "",
       mail_solicitante: session.user.email ?? null,
-      notas: typeof a.notas === "string" ? a.notas : null,
+      notas: a.notas ? [a.notas] : [],
       estado: "pendiente",
       creado_en: new Date().toISOString(),
     };

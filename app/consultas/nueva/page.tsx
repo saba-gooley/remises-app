@@ -146,7 +146,7 @@ export default function NuevaConsultaPage() {
         fecha_fin_recurrente: data.fechaFinRecurrente ?? null,
         centro_costos: data.centroCostos,
         solicitado_por: data.solicitadoPor,
-        notas: data.notas || null,
+        notas: data.notas ? [data.notas] : [],
         estado: "pendiente",
         creado_en: new Date().toISOString(),
       };

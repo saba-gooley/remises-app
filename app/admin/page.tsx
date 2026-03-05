@@ -68,7 +68,7 @@ type Consulta = {
   destino_altura: string | null;
   destino_localidad: string | null;
   pasajero_nombre: string | null;
-  notas: string | null;
+  notas: string | string[] | null;
   mail_solicitante: string | null;
   respuesta_operador: string | null;
   creado_en: string | null;
@@ -458,7 +458,7 @@ export default function AdminPage() {
                     ["Centro de costos", consultaSeleccionada.centro_costos],
                     ["Solicitado por", consultaSeleccionada.solicitado_por],
                     ["Mail solicitante", consultaSeleccionada.mail_solicitante],
-                    ["Notas", consultaSeleccionada.notas],
+                    ["Notas", notasText(consultaSeleccionada.notas)],
                   ] as [string, string | null | undefined][]).map(([label, value]) => (
                     <div key={label}>
                       <span className="font-medium text-zinc-500">{label}: </span>
