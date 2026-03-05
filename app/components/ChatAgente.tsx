@@ -869,8 +869,12 @@ export default function ChatAgente() {
             { role: "assistant" as const, content: msgAsistente },
           ]);
           if (data.datos) {
-            setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
-            setAnswers((prev) => ({ ...prev, ...data.datos }));
+            // Solo mezclar valores no-nulos para no destruir datos acumulados previos
+            const nonNullDatos = Object.fromEntries(
+              Object.entries(data.datos).filter(([, v]) => v !== null && v !== undefined && v !== ""),
+            );
+            setDatosConversacional((prev) => ({ ...prev, ...nonNullDatos }));
+            setAnswers((prev) => ({ ...prev, ...nonNullDatos }));
           }
           if (data.reservaCompleta) {
             setStep("confirmar_conversacional");
@@ -904,7 +908,11 @@ export default function ChatAgente() {
 
           if (data.accion === "confirmar") {
             // Claude quiere confirmar → validar ANTES de mostrar su mensaje
-            const mergedAnswers: Answers = { ...answers, ...datosConversacional, ...(data.datos ?? {}) };
+            // Solo aplicar valores no-nulos para no destruir datos acumulados previos
+            const nonNullConfirmDatos = Object.fromEntries(
+              Object.entries(data.datos ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== ""),
+            );
+            const mergedAnswers: Answers = { ...answers, ...datosConversacional, ...nonNullConfirmDatos };
             console.log("[ChatAgente] accion=confirmar, mergedAnswers:", mergedAnswers);
 
             if (mergedAnswers.fechaViaje) {
