@@ -723,7 +723,11 @@ export default function ChatAgente() {
   }, [session, answers, addAgent]);
 
   const submitConsulta = useCallback(async (answersOverride?: Answers) => {
-    if (!session?.user) return;
+    if (!session?.user) {
+      console.error("[ChatAgente] submitConsulta: no hay sesión activa");
+      addAgent("Tu sesión expiró. Por favor recargá la página e iniciá sesión nuevamente.");
+      return;
+    }
     setSubmitting(true);
     const a = answersOverride ?? answers;
 
@@ -736,8 +740,8 @@ export default function ChatAgente() {
       usuario_id: session.user.id,
       cliente_id: clienteId,
       tipo_viaje: a.tipoViaje ?? "pasajero",
-      fecha_viaje: a.fechaViaje ?? "",
-      hora_viaje: a.horaViaje ?? "",
+      fecha_viaje: a.fechaViaje || null,
+      hora_viaje: a.horaViaje || null,
       origen_calle: a.origenCalle ?? "",
       origen_altura: a.origenAltura ?? "",
       origen_localidad: a.origenLocalidad ?? "",
@@ -751,22 +755,23 @@ export default function ChatAgente() {
       ida_y_vuelta: a.idaYVuelta === "SI",
       es_recurrente: a.esRecurrente === "SI",
       dias_recurrente: Array.isArray(a.diasRecurrente) && a.diasRecurrente.length > 0 ? a.diasRecurrente : null,
-      hora_recurrente: a.horaRecurrente ?? null,
-      fecha_inicio_recurrente: a.fechaInicioRecurrente ?? null,
-      fecha_fin_recurrente: a.fechaFinRecurrente ?? null,
+      hora_recurrente: a.horaRecurrente || null,
+      fecha_inicio_recurrente: a.fechaInicioRecurrente || null,
+      fecha_fin_recurrente: a.fechaFinRecurrente || null,
       id_viaje: a.idViaje ?? null,
       centro_costos: a.centroCostos ?? "",
       solicitado_por: a.solicitadoPor ?? "",
       mail_solicitante: session.user.email ?? null,
-      notas: a.notas ?? null,
+      notas: typeof a.notas === "string" ? a.notas : null,
       estado: "pendiente",
       creado_en: new Date().toISOString(),
     };
 
+    console.log("[ChatAgente] submitConsulta payload:", JSON.stringify(payload, null, 2));
     const { error: consultaError } = await supabase.from("consultas").insert(payload);
     if (consultaError) {
       console.error("[ChatAgente] Error al insertar consulta:", consultaError);
-      addAgent("Hubo un problema al registrar la consulta. ¿Querés intentarlo de nuevo?");
+      addAgent(`Hubo un problema al registrar la consulta: ${consultaError.message}. ¿Querés intentarlo de nuevo?`);
       setSubmitting(false);
       return;
     }
