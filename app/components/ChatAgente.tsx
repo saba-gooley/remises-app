@@ -893,6 +893,10 @@ export default function ChatAgente() {
       setInputValue("");
       setLoading(true);
       const nuevoHistorial2 = [...historialConversacional];
+      // Capturar antes del fetch para evitar cualquier cambio asíncrono
+      const isConsultaCapturada = esConsultaRef.current;
+      const rawLower = raw.toLowerCase();
+      const esConfirmacionUsuario = ["si", "sí", "confirmo", "dale", "ok", "listo", "correcto", "confirmado", "todo bien", "está bien"].some(w => rawLower.includes(w));
       fetch("/api/chat-reserva", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -900,6 +904,10 @@ export default function ChatAgente() {
       })
         .then(async (res) => {
           const data = await res.json() as { message?: string; reservaCompleta?: boolean; accion?: string | null; datos?: Partial<Answers>; error?: string };
+          // Si Claude devuelve reservaCompleta:true con accion:null pero el usuario claramente confirmó, forzar "confirmar"
+          if (!data.accion && data.reservaCompleta && esConfirmacionUsuario) {
+            data.accion = "confirmar";
+          }
           if (!res.ok || data.error) {
             console.error("[chat-reserva] error en confirmar:", data);
             addAgent(`Hubo un error (${data.error ?? res.status}). ¿Podés intentarlo de nuevo?`);
@@ -937,7 +945,7 @@ export default function ChatAgente() {
 
             // Fecha válida → crear reserva o consulta
             // Solo mostrar el mensaje de Claude si es una reserva; para consulta lo muestra submitConsulta
-            if (!esConsultaRef.current) {
+            if (!isConsultaCapturada) {
               addAgent(msgAsistente);
             }
             setHistorialConversacional([
@@ -949,8 +957,8 @@ export default function ChatAgente() {
               setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
             }
             setAnswers(mergedAnswers);
-            console.log("[ChatAgente] submit decision: esConsultaRef.current =", esConsultaRef.current, "mergedAnswers:", mergedAnswers);
-            if (esConsultaRef.current) {
+            console.log("[ChatAgente] submit decision: isConsultaCapturada =", isConsultaCapturada, "esConsultaRef.current =", esConsultaRef.current, "mergedAnswers:", mergedAnswers);
+            if (isConsultaCapturada) {
               void submitConsulta(mergedAnswers);
             } else {
               void submitReserva(mergedAnswers);
