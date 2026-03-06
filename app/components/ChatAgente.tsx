@@ -862,7 +862,7 @@ export default function ChatAgente() {
         body: JSON.stringify({ historial: nuevoHistorial, mensaje: raw, configCampos: config }),
       })
         .then(async (res) => {
-          const data = await res.json() as { message?: string; reservaCompleta?: boolean; datos?: Partial<Answers>; error?: string; debug?: unknown };
+          const data = await res.json() as { message?: string; reservaCompleta?: boolean; accion?: string | null; datos?: Partial<Answers>; error?: string; debug?: unknown };
           if (!res.ok || data.error) {
             console.error("[chat-reserva] error:", data);
             addAgent(`Hubo un error al contactar al asistente (${data.error ?? res.status}). ¿Podés intentarlo de nuevo?`);
