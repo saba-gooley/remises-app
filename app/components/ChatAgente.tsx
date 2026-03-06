@@ -885,7 +885,38 @@ export default function ChatAgente() {
             setDatosConversacional((prev) => ({ ...prev, ...nonNullDatos }));
             setAnswers((prev) => ({ ...prev, ...nonNullDatos }));
           }
-          if (data.reservaCompleta) {
+          if (data.accion === "confirmar") {
+            // Claude confirmó directamente desde chat_conversacional → ejecutar submit
+            const arrayFieldsChat = new Set(["paradas", "tieneParadas"]);
+            const nonNullChatDatos = Object.fromEntries(
+              Object.entries(data.datos ?? {}).filter(([k, v]) => arrayFieldsChat.has(k) || (v !== null && v !== undefined && v !== "")),
+            );
+            const mergedAnswersChat: Answers = { ...answers, ...datosConversacional, ...nonNullChatDatos };
+            // Validar fecha
+            if (mergedAnswersChat.fechaViaje) {
+              const fechaViaje = new Date(mergedAnswersChat.fechaViaje + "T00:00:00");
+              const hoy = new Date();
+              hoy.setHours(0, 0, 0, 0);
+              if (fechaViaje < hoy) {
+                addAgent(`La fecha del viaje (${mergedAnswersChat.fechaViaje.split("-").reverse().join("/")}) no puede ser anterior a hoy. ¿Querés indicarme una fecha correcta?`);
+                setStep("chat_conversacional");
+                return;
+              }
+            }
+            setAnswers(mergedAnswersChat);
+            const isConsultaChat = esConsultaRef.current;
+            if (isConsultaChat) {
+              submitConsulta(mergedAnswersChat).catch((e: unknown) => {
+                console.error("[ChatAgente] submitConsulta uncaught error (chat):", e);
+                addAgent("Error inesperado al guardar la consulta. Intentá de nuevo.");
+              });
+            } else {
+              submitReserva(mergedAnswersChat).catch((e: unknown) => {
+                console.error("[ChatAgente] submitReserva uncaught error (chat):", e);
+                addAgent("Error inesperado al guardar la reserva. Intentá de nuevo.");
+              });
+            }
+          } else if (data.reservaCompleta) {
             setStep("confirmar_conversacional");
           }
         })
@@ -1272,6 +1303,8 @@ export default function ChatAgente() {
     step,
     inputValue,
     answers,
+    datosConversacional,
+    historialConversacional,
     paradaIndex,
     config,
     missingStepsAfterDictar,
