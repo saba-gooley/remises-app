@@ -701,6 +701,7 @@ export default function ChatAgente() {
       setSubmitting(false);
       return;
     }
+    console.log("[ChatAgente] POST-INSERT: a.paradas =", a.paradas, "length =", a.paradas?.length);
     if (a.paradas?.length && reservasInsertadas?.length) {
       const paradasPayload = a.paradas.flatMap((p) =>
         reservasInsertadas.map((r) => ({
@@ -723,6 +724,7 @@ export default function ChatAgente() {
         return;
       }
     }
+    console.log("[ChatAgente] PRE-ADDAGENT: llegó al mensaje de éxito");
     addAgent("Reserva creada correctamente. Será confirmada por el operador.");
     setStep("greeting");
     setAnswers({});
