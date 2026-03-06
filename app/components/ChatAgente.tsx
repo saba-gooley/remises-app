@@ -782,11 +782,11 @@ export default function ChatAgente() {
     const { error: consultaError } = await supabase.from("consultas").insert(payload);
     if (consultaError) {
       console.error("[ChatAgente] Error al insertar consulta:", consultaError);
-      addAgent(`Hubo un problema al registrar la consulta: ${consultaError.message}. ¿Querés intentarlo de nuevo?`);
+      addAgent("Hubo un problema al crear la consulta. ¿Querés intentarlo de nuevo?");
       setSubmitting(false);
       return;
     }
-    addAgent("Tu consulta fue registrada. Te notificaremos cuando tengamos una respuesta.");
+    addAgent("Tu consulta ha sido registrada. Un operador te confirmará la disponibilidad.");
     setStep("greeting");
     setAnswers({});
     setParadaIndex(0);
@@ -953,8 +953,9 @@ export default function ChatAgente() {
             }
 
             // Fecha válida → crear reserva o consulta
-            // Solo mostrar el mensaje de Claude si es una reserva; para consulta lo muestra submitConsulta
-            if (!isConsultaCapturada) {
+            if (isConsultaCapturada) {
+              addAgent("¡Todo listo! Estamos generando tu consulta de disponibilidad.");
+            } else {
               addAgent(msgAsistente);
             }
             setHistorialConversacional([
