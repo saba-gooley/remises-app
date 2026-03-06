@@ -182,12 +182,6 @@ export default function NuevaConsultaPage() {
               <p className="mt-1 text-xs text-zinc-500">Identificación y tipo de servicio.</p>
             </div>
             <div className="space-y-4 md:col-span-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  ID Viaje {requeridoIdViaje && <span className="ml-0.5 text-red-600">*</span>}
-                </label>
-                <input type="text" className={inputCls} {...register("idViaje", { required: requeridoIdViaje })} />
-              </div>
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">Tipo de viaje</label>
@@ -375,6 +369,12 @@ export default function NuevaConsultaPage() {
             </div>
             <div className="space-y-4 md:col-span-2">
               <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    ID Viaje {requeridoIdViaje && <span className="ml-0.5 text-red-600">*</span>}
+                  </label>
+                  <input type="text" className={inputCls} {...register("idViaje", { required: requeridoIdViaje })} />
+                </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
                     Centro de costos {requeridoCentroCostos && <span className="ml-0.5 text-red-600">*</span>}

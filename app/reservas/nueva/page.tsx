@@ -272,20 +272,6 @@ export default function NuevaReservaPage() {
               </p>
             </div>
             <div className="space-y-4 md:col-span-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  ID Viaje
-                  {requeridoIdViaje && (
-                    <span className="ml-0.5 text-red-600">*</span>
-                  )}
-                </label>
-                <input
-                  type="text"
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                  {...register("idViaje", { required: requeridoIdViaje })}
-                />
-              </div>
-
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
@@ -701,6 +687,19 @@ export default function NuevaReservaPage() {
             </div>
             <div className="space-y-4 md:col-span-2">
               <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    ID Viaje
+                    {requeridoIdViaje && (
+                      <span className="ml-0.5 text-red-600">*</span>
+                    )}
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                    {...register("idViaje", { required: requeridoIdViaje })}
+                  />
+                </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
                     Centro de costos
