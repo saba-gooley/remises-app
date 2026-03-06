@@ -641,8 +641,8 @@ export default function ChatAgente() {
     }
     setSubmitting(true);
     const a = answersOverride ?? answers;
-    console.warn("[ChatAgente] submitReserva llamado. Fuente:", answersOverride ? "override (conversacional)" : "state (guiado)");
-    console.warn("[ChatAgente] answers a usar:", a);
+    console.log("[ChatAgente] submitReserva llamado. Fuente:", answersOverride ? "override (conversacional)" : "state (guiado)");
+    console.log("[ChatAgente] answers a usar:", a);
 
     // Obtener cliente_id del usuario logueado
     let clienteId: string | null = null;
@@ -967,11 +967,17 @@ export default function ChatAgente() {
               setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
             }
             setAnswers(mergedAnswers);
-            console.warn("[ChatAgente] submit decision: isConsultaCapturada =", isConsultaCapturada, "esConsultaRef.current =", esConsultaRef.current, "mergedAnswers:", mergedAnswers);
+            console.log("[ChatAgente] submit decision: isConsultaCapturada =", isConsultaCapturada, "esConsultaRef.current =", esConsultaRef.current);
             if (isConsultaCapturada) {
-              void submitConsulta(mergedAnswers);
+              submitConsulta(mergedAnswers).catch((e: unknown) => {
+                console.error("[ChatAgente] submitConsulta uncaught error:", e);
+                addAgent("Error inesperado al guardar la consulta. Intentá de nuevo.");
+              });
             } else {
-              void submitReserva(mergedAnswers);
+              submitReserva(mergedAnswers).catch((e: unknown) => {
+                console.error("[ChatAgente] submitReserva uncaught error:", e);
+                addAgent("Error inesperado al guardar la reserva. Intentá de nuevo.");
+              });
             }
           } else {
             // Para todos los otros casos: mostrar el mensaje de Claude y actualizar historial/datos
