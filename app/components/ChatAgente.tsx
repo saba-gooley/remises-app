@@ -641,8 +641,8 @@ export default function ChatAgente() {
     }
     setSubmitting(true);
     const a = answersOverride ?? answers;
-    console.log("[ChatAgente] submitReserva llamado. Fuente:", answersOverride ? "override (conversacional)" : "state (guiado)");
-    console.log("[ChatAgente] answers a usar:", a);
+    console.warn("[ChatAgente] submitReserva llamado. Fuente:", answersOverride ? "override (conversacional)" : "state (guiado)");
+    console.warn("[ChatAgente] answers a usar:", a);
 
     // Obtener cliente_id del usuario logueado
     let clienteId: string | null = null;
@@ -689,19 +689,19 @@ export default function ChatAgente() {
       a.idaYVuelta === "SI" && a.conEspera === "NO"
         ? [baseReserva, baseReserva]
         : [baseReserva];
-    console.log("[ChatAgente] Payload a insertar en Supabase:", JSON.stringify(reservasAInsertar, null, 2));
+    console.warn("[ChatAgente] Payload a insertar en Supabase:", JSON.stringify(reservasAInsertar, null, 2));
     const { data: reservasInsertadas, error: reservasError } = await supabase
       .from("reservas")
       .insert(reservasAInsertar)
       .select("id");
-    console.log("[ChatAgente] Resultado insert reservas:", { reservasInsertadas, reservasError });
+    console.warn("[ChatAgente] Resultado insert reservas:", { reservasInsertadas, reservasError });
     if (reservasError) {
       console.error("[ChatAgente] Error al insertar reservas:", reservasError);
       addAgent("Hubo un problema al crear la reserva. ¿Querés intentarlo de nuevo?");
       setSubmitting(false);
       return;
     }
-    console.log("[ChatAgente] POST-INSERT: a.paradas =", a.paradas, "length =", a.paradas?.length);
+    console.warn("[ChatAgente] POST-INSERT: a.paradas =", a.paradas, "length =", a.paradas?.length);
     if (a.paradas?.length && reservasInsertadas?.length) {
       const paradasPayload = a.paradas.flatMap((p) =>
         reservasInsertadas.map((r) => ({
@@ -724,7 +724,7 @@ export default function ChatAgente() {
         return;
       }
     }
-    console.log("[ChatAgente] PRE-ADDAGENT: llegó al mensaje de éxito");
+    console.warn("[ChatAgente] PRE-ADDAGENT: llegó al mensaje de éxito");
     addAgent("Reserva creada correctamente. Será confirmada por el operador.");
     setStep("greeting");
     setAnswers({});
@@ -931,7 +931,7 @@ export default function ChatAgente() {
               Object.entries(data.datos ?? {}).filter(([k, v]) => arrayFields.has(k) || (v !== null && v !== undefined && v !== "")),
             );
             const mergedAnswers: Answers = { ...answers, ...datosConversacional, ...nonNullConfirmDatos };
-            console.log("[ChatAgente] accion=confirmar, mergedAnswers:", mergedAnswers);
+            console.warn("[ChatAgente] accion=confirmar, mergedAnswers:", mergedAnswers);
 
             if (mergedAnswers.fechaViaje) {
               const fechaViaje = new Date(mergedAnswers.fechaViaje + "T00:00:00");
@@ -966,7 +966,7 @@ export default function ChatAgente() {
               setDatosConversacional((prev) => ({ ...prev, ...data.datos }));
             }
             setAnswers(mergedAnswers);
-            console.log("[ChatAgente] submit decision: isConsultaCapturada =", isConsultaCapturada, "esConsultaRef.current =", esConsultaRef.current, "mergedAnswers:", mergedAnswers);
+            console.warn("[ChatAgente] submit decision: isConsultaCapturada =", isConsultaCapturada, "esConsultaRef.current =", esConsultaRef.current, "mergedAnswers:", mergedAnswers);
             if (isConsultaCapturada) {
               void submitConsulta(mergedAnswers);
             } else {
