@@ -374,9 +374,11 @@ export default function ChatAgente() {
     }
     setLoading(false);
     // Ir directamente al chat conversacional (Dictar/Guiarme ocultos para uso futuro)
+    setAnswers({});
     setHistorialConversacional([]);
     setDatosConversacional({});
     setMissingStepsAfterDictar(null);
+    setParadaIndex(0);
     esConsultaRef.current = false;
     setEsConsulta(false);
     setStep("chat_conversacional");
@@ -419,9 +421,11 @@ export default function ChatAgente() {
       if (cliente?.configuracion_campos) setConfig(cliente.configuracion_campos as ConfigCampos);
     }
     setLoading(false);
+    setAnswers({});
     setHistorialConversacional([]);
     setDatosConversacional({});
     setMissingStepsAfterDictar(null);
+    setParadaIndex(0);
     esConsultaRef.current = true;
     setEsConsulta(true);
     setStep("chat_conversacional");
@@ -870,9 +874,11 @@ export default function ChatAgente() {
             { role: "assistant" as const, content: msgAsistente },
           ]);
           if (data.datos) {
-            // Solo mezclar valores no-nulos para no destruir datos acumulados previos
+            // Solo mezclar valores no-nulos para no destruir datos acumulados previos.
+            // Excepción: paradas y tieneParadas siempre se aplican (aunque sean null/false) para no heredar datos viejos.
+            const arrayFields = new Set(["paradas", "tieneParadas"]);
             const nonNullDatos = Object.fromEntries(
-              Object.entries(data.datos).filter(([, v]) => v !== null && v !== undefined && v !== ""),
+              Object.entries(data.datos).filter(([k, v]) => arrayFields.has(k) || (v !== null && v !== undefined && v !== "")),
             );
             setDatosConversacional((prev) => ({ ...prev, ...nonNullDatos }));
             setAnswers((prev) => ({ ...prev, ...nonNullDatos }));
@@ -917,9 +923,10 @@ export default function ChatAgente() {
 
           if (data.accion === "confirmar") {
             // Claude quiere confirmar → validar ANTES de mostrar su mensaje
-            // Solo aplicar valores no-nulos para no destruir datos acumulados previos
+            // Solo aplicar valores no-nulos; paradas/tieneParadas siempre se aplican para no heredar datos viejos
+            const arrayFields = new Set(["paradas", "tieneParadas"]);
             const nonNullConfirmDatos = Object.fromEntries(
-              Object.entries(data.datos ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== ""),
+              Object.entries(data.datos ?? {}).filter(([k, v]) => arrayFields.has(k) || (v !== null && v !== undefined && v !== "")),
             );
             const mergedAnswers: Answers = { ...answers, ...datosConversacional, ...nonNullConfirmDatos };
             console.log("[ChatAgente] accion=confirmar, mergedAnswers:", mergedAnswers);
@@ -973,9 +980,10 @@ export default function ChatAgente() {
             ];
             setHistorialConversacional(historialActualizado);
             if (data.datos) {
-              // Solo mezclar valores no-nulos para no destruir datos acumulados previos
+              // Solo mezclar valores no-nulos; paradas/tieneParadas siempre se aplican para no heredar datos viejos
+              const arrayFields = new Set(["paradas", "tieneParadas"]);
               const nonNullElseDatos = Object.fromEntries(
-                Object.entries(data.datos).filter(([, v]) => v !== null && v !== undefined && v !== ""),
+                Object.entries(data.datos).filter(([k, v]) => arrayFields.has(k) || (v !== null && v !== undefined && v !== "")),
               );
               setDatosConversacional((prev) => ({ ...prev, ...nonNullElseDatos }));
               setAnswers((prev) => ({ ...prev, ...nonNullElseDatos }));
