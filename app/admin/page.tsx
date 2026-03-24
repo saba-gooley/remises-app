@@ -33,6 +33,9 @@ type Reserva = {
   estado: string | null;
   creado_en: string | null;
   cliente_id: string | null;
+  numero_reserva_ok: string | null;
+  chofer: string | null;
+  archivo_url: string | null;
 };
 
 type Parada = {
@@ -112,6 +115,13 @@ export default function AdminPage() {
   const [reservaSeleccionada, setReservaSeleccionada] = useState<Reserva | null>(null);
   const [paradasModal, setParadasModal] = useState<Parada[]>([]);
   const [loadingParadas, setLoadingParadas] = useState(false);
+  const [modalNumeroReserva, setModalNumeroReserva] = useState("");
+  const [modalChofer, setModalChofer] = useState("");
+  const [modalArchivoUrl, setModalArchivoUrl] = useState<string | null>(null);
+  const [modalArchivoNombre, setModalArchivoNombre] = useState<string | null>(null);
+  const [uploadingArchivo, setUploadingArchivo] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [showConfirmSinArchivo, setShowConfirmSinArchivo] = useState(false);
 
   // Consultas
   const [consultas, setConsultas] = useState<Consulta[]>([]);
@@ -213,6 +223,12 @@ export default function AdminPage() {
 
   const abrirModal = async (reserva: Reserva) => {
     setReservaSeleccionada(reserva);
+    setModalNumeroReserva(reserva.numero_reserva_ok ?? "");
+    setModalChofer(reserva.chofer ?? "");
+    setModalArchivoUrl(reserva.archivo_url ?? null);
+    setModalArchivoNombre(reserva.archivo_url ? (reserva.archivo_url.split("/").pop() ?? null) : null);
+    setModalError(null);
+    setShowConfirmSinArchivo(false);
     setParadasModal([]);
     setLoadingParadas(true);
     const { data } = await supabase.from("paradas")
@@ -222,30 +238,68 @@ export default function AdminPage() {
     setLoadingParadas(false);
   };
 
-  const handleAccion = async (id: number, nuevoEstado: "confirmada" | "rechazada") => {
+  const handleUploadArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !reservaSeleccionada) return;
+    setUploadingArchivo(true);
+    setModalError(null);
+    const fileName = `${reservaSeleccionada.id}-${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from("archivos-reservas")
+      .upload(fileName, file, { upsert: true });
+    if (uploadError) {
+      setModalError(`Error al subir archivo: ${uploadError.message}`);
+      setUploadingArchivo(false);
+      return;
+    }
+    const { data: urlData } = supabase.storage.from("archivos-reservas").getPublicUrl(fileName);
+    setModalArchivoUrl(urlData.publicUrl);
+    setModalArchivoNombre(file.name);
+    setUploadingArchivo(false);
+  };
+
+  const handleConfirmar = async (forzarSinArchivo = false) => {
+    if (!reservaSeleccionada) return;
+    if (!modalNumeroReserva.trim()) {
+      setModalError("Debe ingresar el número de reserva antes de confirmar.");
+      return;
+    }
+    if (!modalArchivoUrl && !forzarSinArchivo) {
+      setShowConfirmSinArchivo(true);
+      return;
+    }
+    setShowConfirmSinArchivo(false);
+    setActionLoadingId(reservaSeleccionada.id);
+    setModalError(null);
+    const response = await fetch("/api/confirmar-reserva", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        reservaId: reservaSeleccionada.id,
+        numero_reserva_ok: modalNumeroReserva.trim(),
+        chofer: modalChofer.trim() || null,
+        archivo_url: modalArchivoUrl ?? null,
+      }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setModalError(data?.error ?? "Error al confirmar. Intentá nuevamente.");
+    } else {
+      setReservas((prev) => prev.filter((r) => r.id !== reservaSeleccionada.id));
+      setReservaSeleccionada(null);
+    }
+    setActionLoadingId(null);
+  };
+
+  const handleRechazar = async (id: number) => {
     setActionLoadingId(id);
     setError(null);
-    if (nuevoEstado === "confirmada") {
-      const response = await fetch("/api/confirmar-reserva", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reservaId: id }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        setError(data?.error ?? "Error al confirmar. Intentá nuevamente.");
-      } else {
-        setReservas((prev) => prev.filter((r) => r.id !== id));
-        if (reservaSeleccionada?.id === id) setReservaSeleccionada(null);
-      }
-    } else {
-      const { error: updateError } = await supabase.from("reservas")
-        .update({ estado: nuevoEstado }).eq("id", id);
-      if (updateError) { setError(updateError.message); }
-      else {
-        setReservas((prev) => prev.filter((r) => r.id !== id));
-        if (reservaSeleccionada?.id === id) setReservaSeleccionada(null);
-      }
+    const { error: updateError } = await supabase.from("reservas")
+      .update({ estado: "rechazada" }).eq("id", id);
+    if (updateError) { setError(updateError.message); }
+    else {
+      setReservas((prev) => prev.filter((r) => r.id !== id));
+      if (reservaSeleccionada?.id === id) setReservaSeleccionada(null);
     }
     setActionLoadingId(null);
   };
@@ -516,8 +570,6 @@ export default function AdminPage() {
                       <th className="px-3 py-2">Origen</th>
                       <th className="px-3 py-2">Destino</th>
                       <th className="px-3 py-2">Pasajero</th>
-                      <th className="px-3 py-2">Notas</th>
-                      <th className="px-3 py-2">Mail solicitante</th>
                       <th className="px-3 py-2">Acciones</th>
                     </tr>
                   </thead>
@@ -535,17 +587,15 @@ export default function AdminPage() {
                         <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.origen_calle, r.origen_altura, r.origen_localidad)}</td>
                         <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.destino_calle, r.destino_altura, r.destino_localidad)}</td>
                         <td className="px-3 py-2 text-xs text-zinc-700">{r.pasajero_nombre ?? "-"}</td>
-                        <td className="max-w-[140px] truncate px-3 py-2 text-xs text-zinc-600">{notasText(r.notas)}</td>
-                        <td className="px-3 py-2 text-xs text-zinc-600">{r.mail_solicitante ?? "-"}</td>
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           <div className="flex flex-wrap gap-2">
                             <button type="button" disabled={actionLoadingId === r.id}
-                              onClick={() => void handleAccion(r.id, "confirmada")}
+                              onClick={() => { void abrirModal(r); }}
                               className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-                              {actionLoadingId === r.id ? "..." : "Confirmar"}
+                              Ver / Confirmar
                             </button>
                             <button type="button" disabled={actionLoadingId === r.id}
-                              onClick={() => void handleAccion(r.id, "rechazada")}
+                              onClick={() => void handleRechazar(r.id)}
                               className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
                               Rechazar
                             </button>
@@ -633,17 +683,103 @@ export default function AdminPage() {
                   )}
                 </div>
 
-                <div className="mt-4 flex gap-2">
-                  <button type="button" disabled={actionLoadingId === reservaSeleccionada.id}
-                    onClick={() => void handleAccion(reservaSeleccionada.id, "confirmada")}
-                    className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-                    {actionLoadingId === reservaSeleccionada.id ? "Procesando..." : "Confirmar reserva"}
-                  </button>
-                  <button type="button" disabled={actionLoadingId === reservaSeleccionada.id}
-                    onClick={() => void handleAccion(reservaSeleccionada.id, "rechazada")}
-                    className="rounded-md bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
-                    Rechazar reserva
-                  </button>
+                {/* Campos de confirmación */}
+                <div className="mt-5 space-y-3 border-t border-zinc-200 pt-4">
+                  <h3 className="text-xs font-semibold text-zinc-700">Datos de confirmación</h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-700">
+                        Número de reserva <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={modalNumeroReserva}
+                        onChange={(e) => setModalNumeroReserva(e.target.value)}
+                        placeholder="Ej: 2025-0045"
+                        className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-xs shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-700">Chofer (opcional)</label>
+                      <input
+                        type="text"
+                        value={modalChofer}
+                        onChange={(e) => setModalChofer(e.target.value)}
+                        placeholder="Nombre del chofer"
+                        className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-xs shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Archivo adjunto */}
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-700">Archivo adjunto (opcional)</label>
+                    {modalArchivoUrl ? (
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-zinc-700">{modalArchivoNombre ?? "Archivo cargado"}</span>
+                        <a href={modalArchivoUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-xs font-medium text-blue-600 underline hover:text-blue-800">
+                          Ver archivo
+                        </a>
+                        <button type="button"
+                          onClick={() => { setModalArchivoUrl(null); setModalArchivoNombre(null); }}
+                          className="text-xs text-red-500 underline hover:text-red-700">
+                          Quitar
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                        {uploadingArchivo ? "Subiendo..." : "Seleccionar archivo"}
+                        <input
+                          type="file"
+                          className="hidden"
+                          disabled={uploadingArchivo}
+                          onChange={(e) => void handleUploadArchivo(e)}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {modalError && (
+                    <p className="text-xs font-medium text-red-600">{modalError}</p>
+                  )}
+
+                  {/* Popup sin archivo */}
+                  {showConfirmSinArchivo && (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                      <p className="mb-2 text-xs font-medium text-amber-800">
+                        No hay archivo adjunto. ¿Deseás confirmar igualmente?
+                      </p>
+                      <div className="flex gap-2">
+                        <button type="button"
+                          disabled={actionLoadingId === reservaSeleccionada.id}
+                          onClick={() => void handleConfirmar(true)}
+                          className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+                          {actionLoadingId === reservaSeleccionada.id ? "Procesando..." : "Sí, confirmar"}
+                        </button>
+                        <button type="button"
+                          onClick={() => setShowConfirmSinArchivo(false)}
+                          className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button type="button"
+                      disabled={actionLoadingId === reservaSeleccionada.id || uploadingArchivo}
+                      onClick={() => void handleConfirmar(false)}
+                      className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+                      {actionLoadingId === reservaSeleccionada.id ? "Procesando..." : "Confirmar reserva"}
+                    </button>
+                    <button type="button"
+                      disabled={actionLoadingId === reservaSeleccionada.id}
+                      onClick={() => void handleRechazar(reservaSeleccionada.id)}
+                      className="rounded-md bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
+                      Rechazar reserva
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

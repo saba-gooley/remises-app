@@ -34,6 +34,7 @@ type Reserva = {
   notas: string | string[] | null;
   estado: string | null;
   creado_en: string | null;
+  numero_reserva_ok: string | null;
 };
 
 type Parada = {
@@ -191,6 +192,7 @@ export default function MisReservasPage() {
                   <th className="px-3 py-2">Pasajero</th>
                   <th className="px-3 py-2">Notas</th>
                   <th className="px-3 py-2">Estado</th>
+                  {tab === "confirmadas" && <th className="px-3 py-2">Nro. reserva</th>}
                 </tr>
               </thead>
               <tbody>
@@ -217,6 +219,9 @@ export default function MisReservasPage() {
                           : "A confirmar"}
                       </span>
                     </td>
+                    {tab === "confirmadas" && (
+                      <td className="px-3 py-2 text-xs font-medium text-zinc-700">{r.numero_reserva_ok ?? "-"}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>

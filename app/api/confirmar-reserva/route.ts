@@ -16,7 +16,12 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const reservaId =
-      typeof body?.reservaId === "string" ? body.reservaId.trim() : "";
+      typeof body?.reservaId === "string" || typeof body?.reservaId === "number"
+        ? String(body.reservaId).trim()
+        : "";
+    const numeroReservaOk = typeof body?.numero_reserva_ok === "string" ? body.numero_reserva_ok.trim() : null;
+    const chofer = typeof body?.chofer === "string" ? body.chofer.trim() || null : null;
+    const archivoUrl = typeof body?.archivo_url === "string" ? body.archivo_url.trim() || null : null;
 
     if (!reservaId) {
       return NextResponse.json(
@@ -38,9 +43,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Actualizar estado + campos nuevos en un solo update
     const { error: updateError } = await supabaseServer
       .from("reservas")
-      .update({ estado: "confirmada" })
+      .update({
+        estado: "confirmada",
+        ...(numeroReservaOk !== null && { numero_reserva_ok: numeroReservaOk }),
+        ...(chofer !== null && { chofer }),
+        ...(archivoUrl !== null && { archivo_url: archivoUrl }),
+      })
       .eq("id", reservaId);
 
     if (updateError) {
@@ -62,24 +73,14 @@ export async function POST(request: Request) {
     const fecha = reserva.fecha_viaje ?? "-";
     const hora = reserva.hora_viaje ?? "-";
 
-    const origen = `${reserva.origen_calle ?? ""} ${
-      reserva.origen_altura ?? ""
-    } - ${reserva.origen_localidad ?? ""}`.trim();
-    const destino = `${reserva.destino_calle ?? ""} ${
-      reserva.destino_altura ?? ""
-    } - ${reserva.destino_localidad ?? ""}`.trim();
+    const origen = `${reserva.origen_calle ?? ""} ${reserva.origen_altura ?? ""} - ${reserva.origen_localidad ?? ""}`.trim();
+    const destino = `${reserva.destino_calle ?? ""} ${reserva.destino_altura ?? ""} - ${reserva.destino_localidad ?? ""}`.trim();
 
-    const numeroReserva = reserva.id_viaje ?? `RES-${reserva.id}`;
+    const numeroReserva = numeroReservaOk ?? reserva.id_viaje ?? `RES-${reserva.id}`;
+    const choferTexto = chofer ?? (reserva.chofer as string | null) ?? null;
 
     const subject = `Reserva confirmada - ${numeroReserva}`;
-    const textContent = `Tu reserva ha sido confirmada.
-
-Número de reserva: ${numeroReserva}
-Fecha: ${fecha}
-Hora: ${hora}
-Origen: ${origen}
-Destino: ${destino}
-`;
+    const textContent = `Tu reserva ha sido confirmada.\n\nNúmero de reserva: ${numeroReserva}\nFecha: ${fecha}\nHora: ${hora}\nOrigen: ${origen}\nDestino: ${destino}${choferTexto ? `\nChofer: ${choferTexto}` : ""}\n`;
 
     const htmlContent = `
       <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: #111827;">
@@ -91,10 +92,46 @@ Destino: ${destino}
           <li><strong>Hora:</strong> ${hora}</li>
           <li><strong>Origen:</strong> ${origen}</li>
           <li><strong>Destino:</strong> ${destino}</li>
+          ${choferTexto ? `<li><strong>Chofer:</strong> ${choferTexto}</li>` : ""}
         </ul>
         <p style="margin: 0;">Ante cualquier cambio o consulta, contactate con el área de transporte.</p>
       </div>
     `;
+
+    // Si hay archivo adjunto, descargarlo desde Supabase Storage
+    type ResendAttachment = { filename: string; content: string; contentType: string };
+    const attachments: ResendAttachment[] = [];
+    const efectivoArchivoUrl = archivoUrl ?? (reserva.archivo_url as string | null);
+    if (efectivoArchivoUrl) {
+      try {
+        // Extraer el path relativo dentro del bucket
+        const bucketName = "archivos-reservas";
+        const marker = `/${bucketName}/`;
+        const idx = efectivoArchivoUrl.indexOf(marker);
+        const filePath = idx !== -1 ? efectivoArchivoUrl.slice(idx + marker.length) : null;
+
+        if (filePath) {
+          const { data: fileData, error: downloadError } = await supabaseServer.storage
+            .from(bucketName)
+            .download(filePath);
+
+          if (!downloadError && fileData) {
+            const arrayBuffer = await fileData.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString("base64");
+            const fileName = filePath.split("/").pop() ?? "adjunto";
+            // Quitar el prefijo reservaId- del nombre para mostrarlo limpio
+            const displayName = fileName.replace(/^\d+-/, "");
+            attachments.push({
+              filename: displayName,
+              content: base64,
+              contentType: fileData.type || "application/octet-stream",
+            });
+          }
+        }
+      } catch {
+        // Si falla la descarga del archivo, enviamos el email igual sin adjunto
+      }
+    }
 
     const { error: emailError } = await resend.emails.send({
       from: resendFromEmail,
@@ -102,6 +139,7 @@ Destino: ${destino}
       subject,
       text: textContent,
       html: htmlContent,
+      ...(attachments.length > 0 && { attachments }),
     });
 
     if (emailError) {
@@ -112,11 +150,10 @@ Destino: ${destino}
     }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error?.message ?? "Error inesperado." },
+      { error: (error as Error)?.message ?? "Error inesperado." },
       { status: 500 },
     );
   }
 }
-
