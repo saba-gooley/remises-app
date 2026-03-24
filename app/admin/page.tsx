@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -122,6 +123,7 @@ export default function AdminPage() {
   const [uploadingArchivo, setUploadingArchivo] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [showConfirmSinArchivo, setShowConfirmSinArchivo] = useState(false);
+  const detalleReservaRef = useRef<HTMLDivElement>(null);
 
   // Consultas
   const [consultas, setConsultas] = useState<Consulta[]>([]);
@@ -221,6 +223,14 @@ export default function AdminPage() {
     void checkAuthAndFetch();
   }, [router]);
 
+  useEffect(() => {
+    if (!reservaSeleccionada) return;
+    const id = requestAnimationFrame(() => {
+      detalleReservaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [reservaSeleccionada]);
+
   const abrirModal = async (reserva: Reserva) => {
     setReservaSeleccionada(reserva);
     setModalNumeroReserva(reserva.numero_reserva_ok ?? "");
@@ -231,14 +241,17 @@ export default function AdminPage() {
     setShowConfirmSinArchivo(false);
     setParadasModal([]);
     setLoadingParadas(true);
-    const { data } = await supabase.from("paradas")
-      .select("id, calle, altura, localidad, pasajero_nombre, pasajero_telefono")
-      .eq("reserva_id", reserva.id);
-    setParadasModal((data ?? []) as Parada[]);
-    setLoadingParadas(false);
+    try {
+      const { data } = await supabase.from("paradas")
+        .select("id, calle, altura, localidad, pasajero_nombre, pasajero_telefono")
+        .eq("reserva_id", reserva.id);
+      setParadasModal((data ?? []) as Parada[]);
+    } finally {
+      setLoadingParadas(false);
+    }
   };
 
-  const handleUploadArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadArchivo = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !reservaSeleccionada) return;
     setUploadingArchivo(true);
@@ -545,7 +558,9 @@ export default function AdminPage() {
         ) : activeTab === "reservas" ? (
           <>
             <div className="mb-3 flex items-center justify-between gap-4">
-              <p className="text-sm text-zinc-600">Reservas pendientes de confirmación. Hacé click en una fila para ver el detalle.</p>
+              <p className="text-sm text-zinc-600">
+                Reservas pendientes de confirmación. El detalle se abre debajo de la tabla (la página hace scroll automático).
+              </p>
               <button type="button" onClick={() => void fetchReservas()}
                 className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
                 Actualizar
@@ -590,7 +605,11 @@ export default function AdminPage() {
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           <div className="flex flex-wrap gap-2">
                             <button type="button" disabled={actionLoadingId === r.id}
-                              onClick={() => { void abrirModal(r); }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void abrirModal(r);
+                              }}
                               className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
                               Ver / Confirmar
                             </button>
@@ -610,7 +629,7 @@ export default function AdminPage() {
 
             {/* Panel de detalle */}
             {reservaSeleccionada && (
-              <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
+              <div ref={detalleReservaRef} className="mt-6 scroll-mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
                 <div className="mb-4 flex items-start justify-between">
                   <h2 className="text-base font-semibold text-zinc-900">
                     Detalle reserva #{reservaSeleccionada.id}
