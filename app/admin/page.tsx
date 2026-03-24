@@ -104,13 +104,26 @@ function dir(calle: string | null, altura: string | null, localidad: string | nu
   return partes ? `${partes}${localidad ? `, ${localidad}` : ""}` : "-";
 }
 
+/** YYYY-MM-DD en calendario local (para comparar con fecha_viaje). */
+function fechaLocalHoyYYYYMMDD(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [reservas, setReservas] = useState<Reserva[]>([]);
+  const [reservasConfirmadas, setReservasConfirmadas] = useState<Reserva[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingConfirmadas, setLoadingConfirmadas] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"reservas" | "consultas" | "clientes">("reservas");
+  const [activeTab, setActiveTab] = useState<
+    "reservas" | "reservas_confirmadas" | "consultas" | "clientes"
+  >("reservas");
 
   // Modal detalle reserva
   const [reservaSeleccionada, setReservaSeleccionada] = useState<Reserva | null>(null);
@@ -181,6 +194,26 @@ export default function AdminPage() {
     setLoading(false);
   };
 
+  const fetchReservasConfirmadas = async () => {
+    setLoadingConfirmadas(true);
+    setError(null);
+    const hoy = fechaLocalHoyYYYYMMDD();
+    const { data, error: err } = await supabase
+      .from("reservas")
+      .select("*")
+      .eq("estado", "confirmada")
+      .gte("fecha_viaje", hoy)
+      .order("fecha_viaje", { ascending: true });
+
+    if (err) {
+      setError(err.message);
+      setReservasConfirmadas([]);
+    } else {
+      setReservasConfirmadas((data ?? []) as Reserva[]);
+    }
+    setLoadingConfirmadas(false);
+  };
+
   const fetchConsultas = async () => {
     setLoadingConsultas(true);
     const { data, error: err } = await supabase
@@ -217,11 +250,16 @@ export default function AdminPage() {
         .select("es_operador").eq("email", session.user.email).maybeSingle();
       if (!usuario?.es_operador) { router.replace("/login"); return; }
       await fetchReservas();
+      await fetchReservasConfirmadas();
       await fetchConsultas();
       await fetchClientesYUsuarios();
     };
     void checkAuthAndFetch();
   }, [router]);
+
+  useEffect(() => {
+    setReservaSeleccionada(null);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!reservaSeleccionada) return;
@@ -300,6 +338,7 @@ export default function AdminPage() {
     } else {
       setReservas((prev) => prev.filter((r) => r.id !== reservaSeleccionada.id));
       setReservaSeleccionada(null);
+      void fetchReservasConfirmadas();
     }
     setActionLoadingId(null);
   };
@@ -397,9 +436,10 @@ export default function AdminPage() {
           <p className="text-sm text-zinc-600">Gestión de reservas y clientes.</p>
         </div>
 
-        <div className="mb-4 flex gap-2 border-b border-zinc-200">
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-zinc-200">
           {([
             { key: "reservas", label: "Reservas a confirmar" },
+            { key: "reservas_confirmadas", label: "Reservas confirmadas" },
             { key: "consultas", label: "Consultas pendientes" },
             { key: "clientes", label: "Gestión de Clientes" },
           ] as const).map(({ key, label }) => (
@@ -555,255 +595,7 @@ export default function AdminPage() {
               </div>
             )}
           </>
-        ) : activeTab === "reservas" ? (
-          <>
-            <div className="mb-3 flex items-center justify-between gap-4">
-              <p className="text-sm text-zinc-600">
-                Reservas pendientes de confirmación. El detalle se abre debajo de la tabla (la página hace scroll automático).
-              </p>
-              <button type="button" onClick={() => void fetchReservas()}
-                className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
-                Actualizar
-              </button>
-            </div>
-
-            {error && <p className="mb-3 text-sm text-red-600" role="alert">{error}</p>}
-
-            {loading ? (
-              <p className="text-sm text-zinc-600">Cargando reservas...</p>
-            ) : reservas.length === 0 ? (
-              <p className="text-sm text-zinc-600">No hay reservas pendientes de confirmación.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500">
-                    <tr>
-                      <th className="px-3 py-2">Fecha solicitud</th>
-                      <th className="px-3 py-2">Cliente</th>
-                      <th className="px-3 py-2">Fecha viaje</th>
-                      <th className="px-3 py-2">Hora</th>
-                      <th className="px-3 py-2">Origen</th>
-                      <th className="px-3 py-2">Destino</th>
-                      <th className="px-3 py-2">Pasajero</th>
-                      <th className="px-3 py-2">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reservas.map((r) => (
-                      <tr
-                        key={r.id}
-                        onClick={() => void abrirModal(r)}
-                        className={`cursor-pointer border-b border-zinc-100 hover:bg-blue-50 ${reservaSeleccionada?.id === r.id ? "bg-blue-50" : ""}`}
-                      >
-                        <td className="px-3 py-2 text-xs text-zinc-600">{fmt(r.creado_en, true)}</td>
-                        <td className="px-3 py-2 text-xs font-medium text-zinc-800">{clienteNombre(r.cliente_id)}</td>
-                        <td className="px-3 py-2 text-xs text-zinc-700">{fmt(r.fecha_viaje)}</td>
-                        <td className="px-3 py-2 text-xs text-zinc-700">{r.hora_viaje ?? "-"}</td>
-                        <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.origen_calle, r.origen_altura, r.origen_localidad)}</td>
-                        <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.destino_calle, r.destino_altura, r.destino_localidad)}</td>
-                        <td className="px-3 py-2 text-xs text-zinc-700">{r.pasajero_nombre ?? "-"}</td>
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex flex-wrap gap-2">
-                            <button type="button" disabled={actionLoadingId === r.id}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void abrirModal(r);
-                              }}
-                              className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-                              Ver / Confirmar
-                            </button>
-                            <button type="button" disabled={actionLoadingId === r.id}
-                              onClick={() => void handleRechazar(r.id)}
-                              className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
-                              Rechazar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Panel de detalle */}
-            {reservaSeleccionada && (
-              <div ref={detalleReservaRef} className="mt-6 scroll-mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
-                <div className="mb-4 flex items-start justify-between">
-                  <h2 className="text-base font-semibold text-zinc-900">
-                    Detalle reserva #{reservaSeleccionada.id}
-                  </h2>
-                  <button type="button" onClick={() => setReservaSeleccionada(null)}
-                    className="text-xs text-zinc-500 hover:text-zinc-800 underline">
-                    Cerrar
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs md:grid-cols-3 lg:grid-cols-4">
-                  {[
-                    ["Cliente", clienteNombre(reservaSeleccionada.cliente_id)],
-                    ["Fecha solicitud", fmt(reservaSeleccionada.creado_en, true)],
-                    ["ID Viaje", reservaSeleccionada.id_viaje],
-                    ["Tipo de viaje", reservaSeleccionada.tipo_viaje],
-                    ["Fecha viaje", fmt(reservaSeleccionada.fecha_viaje)],
-                    ["Hora", reservaSeleccionada.hora_viaje],
-                    ["Origen", dir(reservaSeleccionada.origen_calle, reservaSeleccionada.origen_altura, reservaSeleccionada.origen_localidad)],
-                    ["Destino", dir(reservaSeleccionada.destino_calle, reservaSeleccionada.destino_altura, reservaSeleccionada.destino_localidad)],
-                    ["Pasajero", reservaSeleccionada.pasajero_nombre],
-                    ["Teléfono", reservaSeleccionada.pasajero_telefono],
-                    ["Cantidad pasajeros", reservaSeleccionada.pasajero_cantidad?.toString()],
-                    ["Ida y vuelta", reservaSeleccionada.ida_y_vuelta ? "Sí" : "No"],
-                    ["Con espera", reservaSeleccionada.con_espera ? "Sí" : "No"],
-                    ["Recurrente", reservaSeleccionada.es_recurrente ? "Sí" : "No"],
-                    ["Días recurrente", reservaSeleccionada.dias_recurrente?.join(", ")],
-                    ["Hora recurrente", reservaSeleccionada.hora_recurrente],
-                    ["Inicio recurrente", fmt(reservaSeleccionada.fecha_inicio_recurrente)],
-                    ["Fin recurrente", fmt(reservaSeleccionada.fecha_fin_recurrente)],
-                    ["Centro de costos", reservaSeleccionada.centro_costos],
-                    ["Solicitado por", reservaSeleccionada.solicitado_por],
-                    ["Mail solicitante", reservaSeleccionada.mail_solicitante],
-                    ["Notas", notasText(reservaSeleccionada.notas)],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <span className="font-medium text-zinc-500">{label}: </span>
-                      <span className="text-zinc-800">{value ?? "-"}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Paradas */}
-                <div className="mt-4">
-                  <h3 className="mb-2 text-xs font-semibold text-zinc-700">Paradas intermedias</h3>
-                  {loadingParadas ? (
-                    <p className="text-xs text-zinc-500">Cargando paradas...</p>
-                  ) : paradasModal.length === 0 ? (
-                    <p className="text-xs text-zinc-500">Sin paradas intermedias.</p>
-                  ) : (
-                    <table className="min-w-full text-xs">
-                      <thead className="border-b border-zinc-200 text-[10px] uppercase text-zinc-500">
-                        <tr>
-                          <th className="px-2 py-1 text-left">#</th>
-                          <th className="px-2 py-1 text-left">Dirección</th>
-                          <th className="px-2 py-1 text-left">Pasajero</th>
-                          <th className="px-2 py-1 text-left">Teléfono</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paradasModal.map((p, i) => (
-                          <tr key={p.id} className="border-b border-zinc-100">
-                            <td className="px-2 py-1 text-zinc-500">{i + 1}</td>
-                            <td className="px-2 py-1 text-zinc-700">{dir(p.calle, p.altura, p.localidad)}</td>
-                            <td className="px-2 py-1 text-zinc-700">{p.pasajero_nombre ?? "-"}</td>
-                            <td className="px-2 py-1 text-zinc-700">{p.pasajero_telefono ?? "-"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-
-                {/* Campos de confirmación */}
-                <div className="mt-5 space-y-3 border-t border-zinc-200 pt-4">
-                  <h3 className="text-xs font-semibold text-zinc-700">Datos de confirmación</h3>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-zinc-700">
-                        Número de reserva <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={modalNumeroReserva}
-                        onChange={(e) => setModalNumeroReserva(e.target.value)}
-                        placeholder="Ej: 2025-0045"
-                        className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-xs shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-zinc-700">Chofer (opcional)</label>
-                      <input
-                        type="text"
-                        value={modalChofer}
-                        onChange={(e) => setModalChofer(e.target.value)}
-                        placeholder="Nombre del chofer"
-                        className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-xs shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Archivo adjunto */}
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-zinc-700">Archivo adjunto (opcional)</label>
-                    {modalArchivoUrl ? (
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-zinc-700">{modalArchivoNombre ?? "Archivo cargado"}</span>
-                        <a href={modalArchivoUrl} target="_blank" rel="noopener noreferrer"
-                          className="text-xs font-medium text-blue-600 underline hover:text-blue-800">
-                          Ver archivo
-                        </a>
-                        <button type="button"
-                          onClick={() => { setModalArchivoUrl(null); setModalArchivoNombre(null); }}
-                          className="text-xs text-red-500 underline hover:text-red-700">
-                          Quitar
-                        </button>
-                      </div>
-                    ) : (
-                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
-                        {uploadingArchivo ? "Subiendo..." : "Seleccionar archivo"}
-                        <input
-                          type="file"
-                          className="hidden"
-                          disabled={uploadingArchivo}
-                          onChange={(e) => void handleUploadArchivo(e)}
-                        />
-                      </label>
-                    )}
-                  </div>
-
-                  {modalError && (
-                    <p className="text-xs font-medium text-red-600">{modalError}</p>
-                  )}
-
-                  {/* Popup sin archivo */}
-                  {showConfirmSinArchivo && (
-                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-                      <p className="mb-2 text-xs font-medium text-amber-800">
-                        No hay archivo adjunto. ¿Deseás confirmar igualmente?
-                      </p>
-                      <div className="flex gap-2">
-                        <button type="button"
-                          disabled={actionLoadingId === reservaSeleccionada.id}
-                          onClick={() => void handleConfirmar(true)}
-                          className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-                          {actionLoadingId === reservaSeleccionada.id ? "Procesando..." : "Sí, confirmar"}
-                        </button>
-                        <button type="button"
-                          onClick={() => setShowConfirmSinArchivo(false)}
-                          className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex gap-2">
-                    <button type="button"
-                      disabled={actionLoadingId === reservaSeleccionada.id || uploadingArchivo}
-                      onClick={() => void handleConfirmar(false)}
-                      className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-                      {actionLoadingId === reservaSeleccionada.id ? "Procesando..." : "Confirmar reserva"}
-                    </button>
-                    <button type="button"
-                      disabled={actionLoadingId === reservaSeleccionada.id}
-                      onClick={() => void handleRechazar(reservaSeleccionada.id)}
-                      className="rounded-md bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
-                      Rechazar reserva
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
+        ) : activeTab === "clientes" ? (
           <>
             {/* clientes tab */}
             {clientesError && <p className="mb-3 text-sm text-red-600" role="alert">{clientesError}</p>}
@@ -927,6 +719,328 @@ export default function AdminPage() {
                 </div>
               )}
             </section>
+          </>
+        ) : (
+          <>
+            {activeTab === "reservas" ? (
+              <>
+                <div className="mb-3 flex items-center justify-between gap-4">
+                  <p className="text-sm text-zinc-600">
+                    Reservas pendientes de confirmación. El detalle se abre debajo de la tabla (la página hace scroll automático).
+                  </p>
+                  <button type="button" onClick={() => void fetchReservas()}
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                    Actualizar
+                  </button>
+                </div>
+
+                {error && <p className="mb-3 text-sm text-red-600" role="alert">{error}</p>}
+
+                {loading ? (
+                  <p className="text-sm text-zinc-600">Cargando reservas...</p>
+                ) : reservas.length === 0 ? (
+                  <p className="text-sm text-zinc-600">No hay reservas pendientes de confirmación.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500">
+                        <tr>
+                          <th className="px-3 py-2">Fecha solicitud</th>
+                          <th className="px-3 py-2">Cliente</th>
+                          <th className="px-3 py-2">Fecha viaje</th>
+                          <th className="px-3 py-2">Hora</th>
+                          <th className="px-3 py-2">Origen</th>
+                          <th className="px-3 py-2">Destino</th>
+                          <th className="px-3 py-2">Pasajero</th>
+                          <th className="px-3 py-2">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reservas.map((r) => (
+                          <tr
+                            key={r.id}
+                            onClick={() => void abrirModal(r)}
+                            className={`cursor-pointer border-b border-zinc-100 hover:bg-blue-50 ${reservaSeleccionada?.id === r.id ? "bg-blue-50" : ""}`}
+                          >
+                            <td className="px-3 py-2 text-xs text-zinc-600">{fmt(r.creado_en, true)}</td>
+                            <td className="px-3 py-2 text-xs font-medium text-zinc-800">{clienteNombre(r.cliente_id)}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{fmt(r.fecha_viaje)}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{r.hora_viaje ?? "-"}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.origen_calle, r.origen_altura, r.origen_localidad)}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.destino_calle, r.destino_altura, r.destino_localidad)}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{r.pasajero_nombre ?? "-"}</td>
+                            <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex flex-wrap gap-2">
+                                <button type="button" disabled={actionLoadingId === r.id}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void abrirModal(r);
+                                  }}
+                                  className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+                                  Ver / Confirmar
+                                </button>
+                                <button type="button" disabled={actionLoadingId === r.id}
+                                  onClick={() => void handleRechazar(r.id)}
+                                  className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
+                                  Rechazar
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-between gap-4">
+                  <p className="text-sm text-zinc-600">
+                    Reservas confirmadas con fecha de viaje a partir de hoy. Hacé click en una fila para ver el detalle.
+                  </p>
+                  <button type="button" onClick={() => void fetchReservasConfirmadas()}
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                    Actualizar
+                  </button>
+                </div>
+
+                {error && <p className="mb-3 text-sm text-red-600" role="alert">{error}</p>}
+
+                {loadingConfirmadas ? (
+                  <p className="text-sm text-zinc-600">Cargando reservas confirmadas...</p>
+                ) : reservasConfirmadas.length === 0 ? (
+                  <p className="text-sm text-zinc-600">No hay reservas confirmadas con viaje desde hoy en adelante.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500">
+                        <tr>
+                          <th className="px-3 py-2">Fecha ingreso solicitud</th>
+                          <th className="px-3 py-2">Cliente</th>
+                          <th className="px-3 py-2">Fecha viaje</th>
+                          <th className="px-3 py-2">Hora</th>
+                          <th className="px-3 py-2">Origen</th>
+                          <th className="px-3 py-2">Destino</th>
+                          <th className="px-3 py-2">Pasajero</th>
+                          <th className="px-3 py-2">Chofer</th>
+                          <th className="px-3 py-2">Número de reserva</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reservasConfirmadas.map((r) => (
+                          <tr
+                            key={r.id}
+                            onClick={() => void abrirModal(r)}
+                            className={`cursor-pointer border-b border-zinc-100 hover:bg-blue-50 ${reservaSeleccionada?.id === r.id ? "bg-blue-50" : ""}`}
+                          >
+                            <td className="px-3 py-2 text-xs text-zinc-600">{fmt(r.creado_en, true)}</td>
+                            <td className="px-3 py-2 text-xs font-medium text-zinc-800">{clienteNombre(r.cliente_id)}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{fmt(r.fecha_viaje)}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{r.hora_viaje ?? "-"}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.origen_calle, r.origen_altura, r.origen_localidad)}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.destino_calle, r.destino_altura, r.destino_localidad)}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{r.pasajero_nombre ?? "-"}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-700">{r.chofer ?? "-"}</td>
+                            <td className="px-3 py-2 text-xs font-medium text-zinc-700">{r.numero_reserva_ok ?? "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {reservaSeleccionada && (activeTab === "reservas" || activeTab === "reservas_confirmadas") && (
+              <div ref={detalleReservaRef} className="mt-6 scroll-mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
+                <div className="mb-4 flex items-start justify-between">
+                  <h2 className="text-base font-semibold text-zinc-900">
+                    Detalle reserva #{reservaSeleccionada.id}
+                  </h2>
+                  <button type="button" onClick={() => setReservaSeleccionada(null)}
+                    className="text-xs text-zinc-500 hover:text-zinc-800 underline">
+                    Cerrar
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs md:grid-cols-3 lg:grid-cols-4">
+                  {[
+                    ["Cliente", clienteNombre(reservaSeleccionada.cliente_id)],
+                    ["Fecha solicitud", fmt(reservaSeleccionada.creado_en, true)],
+                    ["ID Viaje", reservaSeleccionada.id_viaje],
+                    ["Tipo de viaje", reservaSeleccionada.tipo_viaje],
+                    ["Fecha viaje", fmt(reservaSeleccionada.fecha_viaje)],
+                    ["Hora", reservaSeleccionada.hora_viaje],
+                    ["Origen", dir(reservaSeleccionada.origen_calle, reservaSeleccionada.origen_altura, reservaSeleccionada.origen_localidad)],
+                    ["Destino", dir(reservaSeleccionada.destino_calle, reservaSeleccionada.destino_altura, reservaSeleccionada.destino_localidad)],
+                    ["Pasajero", reservaSeleccionada.pasajero_nombre],
+                    ["Teléfono", reservaSeleccionada.pasajero_telefono],
+                    ["Cantidad pasajeros", reservaSeleccionada.pasajero_cantidad?.toString()],
+                    ["Ida y vuelta", reservaSeleccionada.ida_y_vuelta ? "Sí" : "No"],
+                    ["Con espera", reservaSeleccionada.con_espera ? "Sí" : "No"],
+                    ["Recurrente", reservaSeleccionada.es_recurrente ? "Sí" : "No"],
+                    ["Días recurrente", reservaSeleccionada.dias_recurrente?.join(", ")],
+                    ["Hora recurrente", reservaSeleccionada.hora_recurrente],
+                    ["Inicio recurrente", fmt(reservaSeleccionada.fecha_inicio_recurrente)],
+                    ["Fin recurrente", fmt(reservaSeleccionada.fecha_fin_recurrente)],
+                    ["Centro de costos", reservaSeleccionada.centro_costos],
+                    ["Solicitado por", reservaSeleccionada.solicitado_por],
+                    ["Mail solicitante", reservaSeleccionada.mail_solicitante],
+                    ["Notas", notasText(reservaSeleccionada.notas)],
+                    ...(activeTab === "reservas_confirmadas"
+                      ? ([
+                          ["Número de reserva", reservaSeleccionada.numero_reserva_ok],
+                          ["Chofer", reservaSeleccionada.chofer],
+                        ] as [string, string | null | undefined][])
+                      : []),
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <span className="font-medium text-zinc-500">{label}: </span>
+                      <span className="text-zinc-800">{value ?? "-"}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {activeTab === "reservas_confirmadas" && reservaSeleccionada.archivo_url && (
+                  <div className="mt-3 text-xs">
+                    <span className="font-medium text-zinc-500">Archivo adjunto: </span>
+                    <a href={reservaSeleccionada.archivo_url} target="_blank" rel="noopener noreferrer"
+                      className="font-medium text-blue-600 underline hover:text-blue-800">
+                      Ver archivo
+                    </a>
+                  </div>
+                )}
+
+                <div className="mt-4">
+                  <h3 className="mb-2 text-xs font-semibold text-zinc-700">Paradas intermedias</h3>
+                  {loadingParadas ? (
+                    <p className="text-xs text-zinc-500">Cargando paradas...</p>
+                  ) : paradasModal.length === 0 ? (
+                    <p className="text-xs text-zinc-500">Sin paradas intermedias.</p>
+                  ) : (
+                    <table className="min-w-full text-xs">
+                      <thead className="border-b border-zinc-200 text-[10px] uppercase text-zinc-500">
+                        <tr>
+                          <th className="px-2 py-1 text-left">#</th>
+                          <th className="px-2 py-1 text-left">Dirección</th>
+                          <th className="px-2 py-1 text-left">Pasajero</th>
+                          <th className="px-2 py-1 text-left">Teléfono</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paradasModal.map((p, i) => (
+                          <tr key={p.id} className="border-b border-zinc-100">
+                            <td className="px-2 py-1 text-zinc-500">{i + 1}</td>
+                            <td className="px-2 py-1 text-zinc-700">{dir(p.calle, p.altura, p.localidad)}</td>
+                            <td className="px-2 py-1 text-zinc-700">{p.pasajero_nombre ?? "-"}</td>
+                            <td className="px-2 py-1 text-zinc-700">{p.pasajero_telefono ?? "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                {activeTab === "reservas" && (
+                  <div className="mt-5 space-y-3 border-t border-zinc-200 pt-4">
+                    <h3 className="text-xs font-semibold text-zinc-700">Datos de confirmación</h3>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-zinc-700">
+                          Número de reserva <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={modalNumeroReserva}
+                          onChange={(e) => setModalNumeroReserva(e.target.value)}
+                          placeholder="Ej: 2025-0045"
+                          className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-xs shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-zinc-700">Chofer (opcional)</label>
+                        <input
+                          type="text"
+                          value={modalChofer}
+                          onChange={(e) => setModalChofer(e.target.value)}
+                          placeholder="Nombre del chofer"
+                          className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-xs shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-700">Archivo adjunto (opcional)</label>
+                      {modalArchivoUrl ? (
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-zinc-700">{modalArchivoNombre ?? "Archivo cargado"}</span>
+                          <a href={modalArchivoUrl} target="_blank" rel="noopener noreferrer"
+                            className="text-xs font-medium text-blue-600 underline hover:text-blue-800">
+                            Ver archivo
+                          </a>
+                          <button type="button"
+                            onClick={() => { setModalArchivoUrl(null); setModalArchivoNombre(null); }}
+                            className="text-xs text-red-500 underline hover:text-red-700">
+                            Quitar
+                          </button>
+                        </div>
+                      ) : (
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                          {uploadingArchivo ? "Subiendo..." : "Seleccionar archivo"}
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={uploadingArchivo}
+                            onChange={(e) => void handleUploadArchivo(e)}
+                          />
+                        </label>
+                      )}
+                    </div>
+
+                    {modalError && (
+                      <p className="text-xs font-medium text-red-600">{modalError}</p>
+                    )}
+
+                    {showConfirmSinArchivo && (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                        <p className="mb-2 text-xs font-medium text-amber-800">
+                          No hay archivo adjunto. ¿Deseás confirmar igualmente?
+                        </p>
+                        <div className="flex gap-2">
+                          <button type="button"
+                            disabled={actionLoadingId === reservaSeleccionada.id}
+                            onClick={() => void handleConfirmar(true)}
+                            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+                            {actionLoadingId === reservaSeleccionada.id ? "Procesando..." : "Sí, confirmar"}
+                          </button>
+                          <button type="button"
+                            onClick={() => setShowConfirmSinArchivo(false)}
+                            className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button type="button"
+                        disabled={actionLoadingId === reservaSeleccionada.id || uploadingArchivo}
+                        onClick={() => void handleConfirmar(false)}
+                        className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+                        {actionLoadingId === reservaSeleccionada.id ? "Procesando..." : "Confirmar reserva"}
+                      </button>
+                      <button type="button"
+                        disabled={actionLoadingId === reservaSeleccionada.id}
+                        onClick={() => void handleRechazar(reservaSeleccionada.id)}
+                        className="rounded-md bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60">
+                        Rechazar reserva
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

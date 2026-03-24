@@ -35,6 +35,7 @@ type Reserva = {
   estado: string | null;
   creado_en: string | null;
   numero_reserva_ok: string | null;
+  chofer: string | null;
 };
 
 type Parada = {
@@ -191,8 +192,14 @@ export default function MisReservasPage() {
                   <th className="px-3 py-2">Destino</th>
                   <th className="px-3 py-2">Pasajero</th>
                   <th className="px-3 py-2">Notas</th>
-                  <th className="px-3 py-2">Estado</th>
-                  {tab === "confirmadas" && <th className="px-3 py-2">Nro. reserva</th>}
+                  {tab === "confirmadas" ? (
+                    <>
+                      <th className="px-3 py-2">Chofer</th>
+                      <th className="px-3 py-2">Nro. reserva</th>
+                    </>
+                  ) : (
+                    <th className="px-3 py-2">Estado</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -209,18 +216,22 @@ export default function MisReservasPage() {
                     <td className="px-3 py-2 text-xs text-zinc-700">{dir(r.destino_calle, r.destino_altura, r.destino_localidad)}</td>
                     <td className="px-3 py-2 text-xs text-zinc-700">{r.pasajero_nombre ?? "-"}</td>
                     <td className="max-w-[160px] truncate px-3 py-2 text-xs text-zinc-600">{notasText(r.notas)}</td>
-                    <td className="px-3 py-2">
-                      <span className={`text-xs font-medium ${
-                        r.estado === "confirmada" ? "text-emerald-700"
-                        : r.estado === "rechazada" ? "text-red-600"
-                        : "text-amber-700"}`}>
-                        {r.estado === "confirmada" ? "Confirmada"
-                          : r.estado === "rechazada" ? "Rechazada"
-                          : "A confirmar"}
-                      </span>
-                    </td>
-                    {tab === "confirmadas" && (
-                      <td className="px-3 py-2 text-xs font-medium text-zinc-700">{r.numero_reserva_ok ?? "-"}</td>
+                    {tab === "confirmadas" ? (
+                      <>
+                        <td className="px-3 py-2 text-xs text-zinc-700">{r.chofer ?? "-"}</td>
+                        <td className="px-3 py-2 text-xs font-medium text-zinc-700">{r.numero_reserva_ok ?? "-"}</td>
+                      </>
+                    ) : (
+                      <td className="px-3 py-2">
+                        <span className={`text-xs font-medium ${
+                          r.estado === "confirmada" ? "text-emerald-700"
+                          : r.estado === "rechazada" ? "text-red-600"
+                          : "text-amber-700"}`}>
+                          {r.estado === "confirmada" ? "Confirmada"
+                            : r.estado === "rechazada" ? "Rechazada"
+                            : "A confirmar"}
+                        </span>
+                      </td>
                     )}
                   </tr>
                 ))}
@@ -269,6 +280,8 @@ export default function MisReservasPage() {
                 ["Solicitado por", reservaSeleccionada.solicitado_por],
                 ["Mail solicitante", reservaSeleccionada.mail_solicitante],
                 ["Notas", notasText(reservaSeleccionada.notas)],
+                ["Número de reserva", reservaSeleccionada.numero_reserva_ok],
+                ["Chofer", reservaSeleccionada.chofer],
                 ["Estado", reservaSeleccionada.estado],
               ] as [string, string | null | undefined][]).map(([label, value]) => (
                 <div key={label}>
